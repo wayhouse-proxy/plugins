@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-D warnings"
+  # Keep in step with wayhouse-plugin-abi's rev in Cargo.toml.
+  WAYHOUSE_REV: 7ca15b10c4ed44bac2e86edfabe823ad85916fad
+
+permissions:
+  contents: read
+
+jobs:
+  # Every plugin is tested natively, built for wasm32-unknown-unknown and run through the
+  # host's own conformance check (wayhouse-plugin-check), built from the pinned revision.
+  build:
+    name: build, test and check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - run: cargo install --locked --git https://github.com/wayhouse-proxy/wayhouse --rev "$WAYHOUSE_REV" wayhouse-plugin-host --bin wayhouse-plugin-check
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --release --target wasm32-unknown-unknown --workspace
+      - name: Conformance check every built plugin
+        run: |
+          set -euo pipefail
+          for f in target/wasm32-unknown-unknown/release/*.wasm; do
+            echo "== $f"
+            wayhouse-plugin-check "$f"
+          done
+
+  # The one check to require in the branch ruleset.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          [ "${{ needs.build.result }}" = "success" ] || { echo "build: ${{ needs.build.result }}"; exit 1; }
