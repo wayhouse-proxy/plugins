@@ -35,7 +35,7 @@ wayhouse-plugin-check target/wasm32-unknown-unknown/release/selftest.wasm
 Start a standalone controller with `--plugins`, then (admin bearer token; see `docs/plugins.md` in wayhouse):
 
 ```sh
-sha=$(curl -s -H "Authorization: Bearer $TOKEN" --data-binary @selftest.wasm http://localhost:PORT/plugins/modules | jq -r .sha256)
+sha=$(curl -s -H "Authorization: Bearer $TOKEN" --data-binary @target/wasm32-unknown-unknown/release/selftest.wasm http://localhost:PORT/plugins/modules | jq -r .sha256)
 curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"name\":\"selftest\",\"sha256\":\"$sha\",\"approved\":{\"triggers\":{\"on_timer\":true},\"tick_interval_secs\":10,\"log\":true,\"state\":{\"max_bytes\":1024}},\"enabled\":true}" \
   http://localhost:PORT/plugins

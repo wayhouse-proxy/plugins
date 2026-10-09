@@ -86,6 +86,7 @@ mod guest {
         };
         if rc != 0 {
             info("selftest could not store the counter");
+            return;
         }
         info(&tick_line(n));
     }
