@@ -46,3 +46,7 @@ Or upload it on the Plugins page of the web UI. After about 10 seconds `GET /plu
 ## Layout
 
 One crate per plugin under `plugins/<name>/`, built as `cdylib`, depending on `wayhouse-plugin-abi` (pinned by git revision in the workspace `Cargo.toml`). The capability declaration is a `caps.json` next to the crate, embedded as the `wayhouse.plugin-caps` section.
+
+## Code of conduct
+
+Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md). Report problems privately through a GitHub security advisory on this repository.
