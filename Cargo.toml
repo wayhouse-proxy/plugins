@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+# One crate per plugin under plugins/<name>/. Every plugin builds for wasm32-unknown-unknown.
+members = ["plugins/*"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wayhouse-proxy/plugins"
+
+[workspace.dependencies]
+# The plugin ABI lives in the wayhouse repository (cargo finds the crate by name). Pinned
+# to an exact commit; CI builds wayhouse-plugin-check from the same revision, so this
+# revision is the single place to bump when the ABI changes (ABI 0.1 as of this commit).
+wayhouse-plugin-abi = { git = "https://github.com/wayhouse-proxy/wayhouse", rev = "7ca15b10c4ed44bac2e86edfabe823ad85916fad" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+strip = true

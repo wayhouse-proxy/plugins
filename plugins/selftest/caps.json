@@ -1,0 +1,1 @@
+{"triggers":{"on_timer":true},"tick_interval_secs":10,"log":true,"state":{"max_bytes":1024}}
