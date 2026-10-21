@@ -9,6 +9,7 @@ Plugins from this repository are third-party code: install and run them at your 
 | Plugin | What it is | Capabilities |
 | ------ | ---------- | ------------ |
 | [`selftest`](plugins/selftest) | Test plugin: counts its ticks in `state` and logs each one. Install it to prove the plugin pipeline works. | `on_timer` (10 s), `log`, `state` (1 KiB) |
+| [`pelican`](plugins/pelican) | Routes hostnames to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes, so one entry node serves them all. Build it with your own `caps.json` (see its README). | `on_timer` (60 s), `log`, `http` (panel host), secret `PELICAN_TOKEN`, `routes` |
 
 ## Building
 
