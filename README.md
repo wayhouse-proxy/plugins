@@ -57,7 +57,7 @@ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/j
   -d '{"value":"<cloudflare token>"}' http://localhost:PORT/plugins/<id>/secrets/CLOUDFLARE_API_TOKEN
 ```
 
-Then give an ACME site `"dns_plugin": "<id>"`. The plugin finds the zone by trying the host and its parent names (at most three), adds the TXT record with a 60 s TTL, and removes only the record with the challenge value. It makes no other request than to `api.cloudflare.com`.
+Then give an ACME site `"dns_plugin": "<id>"`. The plugin finds the zone by trying the host and its parent names (at most five), adds the TXT record with a 60 s TTL, and removes only the record with the challenge value. It makes no other request than to `api.cloudflare.com`.
 
 ## Layout
 

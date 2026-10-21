@@ -6,7 +6,8 @@
 //! with `Zone:Read` and `DNS:Edit`). It never sees an ACME account or certificate key.
 //!
 //! One guest call may make 8 HTTP requests, so the zone search tries at most
-//! [`MAX_ZONE_TRIES`] names and a cleanup removes at most [`MAX_DELETES`] records.
+//! [`MAX_ZONE_TRIES`] names (a host up to five labels deep reaches its zone) and a cleanup
+//! removes at most [`MAX_DELETES`] records.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -16,9 +17,11 @@ pub use wayhouse_plugin_abi::alloc;
 
 const API: &str = "https://api.cloudflare.com/client/v4";
 /// Zone names tried, most specific first (`a.b.example.com`, `b.example.com`, `example.com`).
-pub const MAX_ZONE_TRIES: usize = 3;
-/// Records one cleanup removes: 3 zone lookups, 1 listing and 4 deletes make the 8 calls.
-pub const MAX_DELETES: usize = 4;
+pub const MAX_ZONE_TRIES: usize = 5;
+/// Records one cleanup removes: 5 zone lookups, 1 listing and 2 deletes make the 8 calls.
+pub const MAX_DELETES: usize = 2;
+// The worst case (all zone lookups, the listing, all deletes) must fit the host's 8 calls.
+const _: () = assert!(MAX_ZONE_TRIES + 1 + MAX_DELETES <= 8);
 /// Longest message handed back to the controller.
 pub const MAX_MESSAGE: usize = 480;
 /// Cloudflare's code for a record that already exists.

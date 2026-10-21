@@ -107,18 +107,39 @@ fn a_rejected_token_stops_the_zone_search_at_once() {
 }
 
 #[test]
-fn no_zone_gives_a_clear_error_after_at_most_three_lookups() {
+fn no_zone_gives_a_clear_error_after_trying_every_parent() {
     let mut r = req(Op::Present);
     r.zone_hint = "a.b.c.example.com".into();
     r.fqdn = "_acme-challenge.a.b.c.example.com".into();
-    let mut http = Fake::new(vec![ok(json!([])), ok(json!([])), ok(json!([]))]);
+    let mut http = Fake::new(vec![
+        ok(json!([])),
+        ok(json!([])),
+        ok(json!([])),
+        ok(json!([])),
+    ]);
     let e = run(&r, &mut http).unwrap_err();
     assert!(
         e.contains("no Cloudflare zone contains a.b.c.example.com"),
         "{e}"
     );
-    assert_eq!(http.calls.len(), MAX_ZONE_TRIES);
-    assert!(http.calls[2].ends_with("name=c.example.com"));
+    assert_eq!(http.calls.len(), 4);
+    assert!(http.calls[3].ends_with("name=example.com"));
+}
+
+#[test]
+fn a_host_five_labels_deep_reaches_the_apex_zone_and_stays_in_budget() {
+    let mut r = req(Op::Cleanup);
+    r.zone_hint = "a.b.c.d.example.com".into();
+    r.fqdn = "_acme-challenge.a.b.c.d.example.com".into();
+    let record =
+        json!({"id": "r1", "name": "_acme-challenge.a.b.c.d.example.com", "content": "tok-en_1"});
+    let mut script: Vec<Reply> = (0..4).map(|_| ok(json!([]))).collect();
+    script.push(zone("z1"));
+    script.push(ok(json!([record])));
+    script.push(ok(json!({})));
+    let mut http = Fake::new(script);
+    assert_eq!(run(&r, &mut http).unwrap(), "removed 1 TXT record(s)");
+    assert!(http.calls.len() <= 8);
 }
 
 #[test]
