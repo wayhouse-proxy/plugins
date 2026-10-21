@@ -3,6 +3,22 @@
 version = 4
 
 [[package]]
+name = "acme-dns-cloudflare"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "wayhouse-plugin-abi",
+]
+
+[[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -111,7 +127,7 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 [[package]]
 name = "wayhouse-plugin-abi"
 version = "0.2.0"
-source = "git+https://github.com/wayhouse-proxy/wayhouse?rev=827d91f09715b0c10b919c1fab8621c48fa50a6d#827d91f09715b0c10b919c1fab8621c48fa50a6d"
+source = "git+https://github.com/wayhouse-proxy/wayhouse?rev=de03c5ff27369348945b97c7ad4d37006c3be44c#de03c5ff27369348945b97c7ad4d37006c3be44c"
 
 [[package]]
 name = "zmij"

@@ -9,6 +9,7 @@ Plugins from this repository are third-party code: install and run them at your 
 | Plugin | What it is | Capabilities |
 | ------ | ---------- | ------------ |
 | [`selftest`](plugins/selftest) | Test plugin: counts its ticks in `state` and logs each one. Install it to prove the plugin pipeline works. | `on_timer` (10 s), `log`, `state` (1 KiB) |
+| [`acme-dns-cloudflare`](plugins/acme-dns-cloudflare) | DNS-provider plugin for the controller's ACME runner: sets and removes the `_acme-challenge` TXT record in Cloudflare DNS. | `on_acme_dns` (and an unused `on_timer`, 1 week), `http` (`api.cloudflare.com`), secret `CLOUDFLARE_API_TOKEN` |
 | [`pelican`](plugins/pelican) | Routes hostnames to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes, so one entry node serves them all. Build it with your own `caps.json` (see its README). | `on_timer` (60 s), `log`, `http` (panel host), secret `PELICAN_TOKEN`, `routes` |
 
 ## Building
@@ -43,6 +44,21 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 ```
 
 Or upload it on the Plugins page of the web UI. After about 10 seconds `GET /plugins/{id}/status` shows `ticks` rising and `selftest tick N` log lines; the counter lives in the plugin's state and keeps counting across controller restarts.
+
+## Installing `acme-dns-cloudflare`
+
+Create a Cloudflare API token with `Zone:Read` and `DNS:Edit` on the zones your sites use. Start the controller with `--plugins`, `--acme` and a plugin secret key file (see `docs/plugins.md` and `docs/acme.md` in wayhouse). Upload the module, install it with the approved capabilities below, then set the secret slot:
+
+```sh
+sha=$(curl -s -H "Authorization: Bearer $TOKEN" --data-binary @target/wasm32-unknown-unknown/release/acme_dns_cloudflare.wasm http://localhost:PORT/plugins/modules | jq -r .sha256)
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"name\":\"acme-dns-cloudflare\",\"sha256\":\"$sha\",\"approved\":$(cat plugins/acme-dns-cloudflare/caps.json),\"enabled\":true}" \
+  http://localhost:PORT/plugins
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"value":"<cloudflare token>"}' http://localhost:PORT/plugins/<id>/secrets/CLOUDFLARE_API_TOKEN
+```
+
+Then give an ACME site `"dns_plugin": "<id>"`. The plugin finds the zone by trying the host and its parent names (at most five), adds the TXT record with a 60 s TTL, and removes only the record with the challenge value. It makes no other request than to `api.cloudflare.com`.
 
 ## Layout
 

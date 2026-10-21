@@ -1,0 +1,1 @@
+{"triggers":{"on_timer":true,"on_acme_dns":true},"tick_interval_secs":604800,"http":{"hosts":[{"host":"api.cloudflare.com"}]},"secrets":[{"name":"CLOUDFLARE_API_TOKEN","hosts":["api.cloudflare.com"]}]}
