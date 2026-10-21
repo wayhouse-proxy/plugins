@@ -50,6 +50,7 @@ Or upload it on the Plugins page of the web UI. After about 10 seconds `GET /plu
 Create a Cloudflare API token with `Zone:Read` and `DNS:Edit` on the zones your sites use. Start the controller with `--plugins`, `--acme` and a plugin secret key file (see `docs/plugins.md` and `docs/acme.md` in wayhouse). Upload the module, install it with the approved capabilities below, then set the secret slot:
 
 ```sh
+sha=$(curl -s -H "Authorization: Bearer $TOKEN" --data-binary @target/wasm32-unknown-unknown/release/acme_dns_cloudflare.wasm http://localhost:PORT/plugins/modules | jq -r .sha256)
 curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"name\":\"acme-dns-cloudflare\",\"sha256\":\"$sha\",\"approved\":$(cat plugins/acme-dns-cloudflare/caps.json),\"enabled\":true}" \
   http://localhost:PORT/plugins
