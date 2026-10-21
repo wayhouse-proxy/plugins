@@ -45,6 +45,8 @@ pub struct Server {
     pub name: String,
     pub external_id: Option<String>,
     pub suspended: bool,
+    /// Pelican's `status`: null when the server is installed and usable.
+    pub status: Option<String>,
     pub node: u64,
     /// Id of the primary allocation.
     pub allocation: Option<u64>,
@@ -85,6 +87,7 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
         name: String,
         #[serde(default)]
         suspended: bool,
+        status: Option<String>,
         node: u64,
         allocation: Option<u64>,
         relationships: Option<Rel>,
@@ -138,16 +141,19 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
                 name: a.name,
                 external_id: a.external_id,
                 suspended: a.suspended,
+                status: a.status,
                 node: a.node,
                 allocation: a.allocation,
                 allocations,
             }
         })
         .collect();
+    // Without the page count the list could be a partial view; fail closed.
     let total_pages = list
         .meta
         .and_then(|m| m.pagination)
-        .map_or(1, |p| p.total_pages);
+        .map(|p| p.total_pages)
+        .ok_or("server list has no meta.pagination.total_pages")?;
     Ok(Page {
         servers,
         total_pages,
@@ -181,7 +187,7 @@ pub fn render_host(template: &str, s: &Server) -> Option<String> {
             out = out.replace(key, &v);
         }
     }
-    Some(out)
+    Some(out.to_ascii_lowercase())
 }
 
 /// A route entry as the host's `routes_set` takes it.
@@ -202,7 +208,7 @@ pub fn build_routes(
     let mut entries: Vec<Entry> = Vec::new();
     let mut warnings = Vec::new();
     for s in sorted {
-        if s.suspended {
+        if s.suspended || s.status.is_some() {
             continue;
         }
         let Some(primary) = s
@@ -211,6 +217,10 @@ pub fn build_routes(
         else {
             continue;
         };
+        if primary.port == 0 {
+            warnings.push(format!("server {}: allocation has port 0", s.id));
+            continue;
+        }
         let Some(host) = render_host(&cfg.host_template, s) else {
             warnings.push(format!(
                 "server {}: host_template has no value for it",
@@ -233,6 +243,10 @@ pub fn build_routes(
             ));
             continue;
         };
+        if !crate::caps::valid_host(&host) {
+            warnings.push(format!("server {}: {host:?} is not a valid hostname", s.id));
+            continue;
+        }
         if !limits.allows_host(&host) {
             warnings.push(format!(
                 "server {}: host {host} is outside the declared routes.hosts",
@@ -296,6 +310,7 @@ mod tests {
             name: name.into(),
             external_id: None,
             suspended: false,
+            status: None,
             node: 1,
             allocation: Some(id * 10),
             allocations: vec![Allocation {
@@ -469,6 +484,67 @@ mod tests {
         assert_eq!(e.len(), 2);
         assert_eq!(e[1].host, "id2.mc.example.com");
         assert!(w.iter().any(|l| l.contains("max_entries")));
+    }
+
+    #[test]
+    fn missing_pagination_is_an_error() {
+        let body = LIST.replace("\"pagination\"", "\"other\"");
+        assert!(parse_page(body.as_bytes())
+            .unwrap_err()
+            .contains("pagination"));
+        let body = r#"{"object":"list","data":[]}"#;
+        assert!(parse_page(body.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn hosts_the_runtime_would_refuse_are_dropped() {
+        let long = "a".repeat(64);
+        let (e, w) = build_routes(
+            &[server(1, &long, "10.0.0.1"), server(2, "ok", "10.0.0.2")],
+            &cfg("{name}.mc.example.com"),
+            &limits(10),
+        );
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].host, "ok.mc.example.com");
+        assert!(w[0].contains("not a valid hostname"));
+    }
+
+    #[test]
+    fn uppercase_template_literals_are_lowercased() {
+        let (e, _) = build_routes(
+            &[server(1, "a", "10.0.0.1")],
+            &cfg("{identifier}.MC.Example.com"),
+            &limits(10),
+        );
+        assert_eq!(e[0].host, "id1.mc.example.com");
+    }
+
+    #[test]
+    fn port_zero_is_dropped() {
+        let mut s = server(1, "a", "10.0.0.1");
+        s.allocations[0].port = 0;
+        let (e, w) = build_routes(&[s], &cfg("{identifier}.mc.example.com"), &limits(10));
+        assert!(e.is_empty());
+        assert!(w[0].contains("port 0"));
+    }
+
+    #[test]
+    fn servers_with_a_status_are_skipped() {
+        let mut s = server(1, "a", "10.0.0.1");
+        s.status = Some("installing".into());
+        let (e, _) = build_routes(&[s], &cfg("{identifier}.mc.example.com"), &limits(10));
+        assert!(e.is_empty());
+    }
+
+    #[test]
+    fn parses_status() {
+        let body = LIST.replace("\"status\":null", "\"status\":\"install_failed\"");
+        assert_eq!(
+            parse_page(body.as_bytes()).unwrap().servers[0]
+                .status
+                .as_deref(),
+            Some("install_failed")
+        );
     }
 
     #[test]

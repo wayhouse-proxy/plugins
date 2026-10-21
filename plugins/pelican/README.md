@@ -6,8 +6,9 @@ Routes hostnames to the game servers of a [Pelican](https://pelican.dev) panel t
 
 ## What it does
 
-Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 100), then for every server that is not suspended and has a primary allocation: hostname from `host_template`, backend from the primary allocation's `ip:port`. Then one `routes_set` call with the whole set. Operator routes always win over plugin routes.
+Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 100), then for every server that is not suspended, has no `status` (null means installed and usable) and has a primary allocation: hostname from `host_template`, backend from the primary allocation's `ip:port`. Then one `routes_set` call with the whole set. Operator routes always win over plugin routes.
 
+- A list page without `meta.pagination.total_pages` is an error, never "one page".
 - If the panel cannot be read, answers with an error, or has more than 8 pages, nothing is published and the previous routes stay (a partial set would withdraw other servers' routes).
 - Entries outside the plugin's own declared `routes` (host not covered, backend outside the networks, over `max_entries`) are dropped with a warning in the plugin log, because the host would otherwise refuse the whole set.
 - Two servers rendering to the same hostname: the lower server id wins, the other is logged.

@@ -56,6 +56,21 @@ impl RouteLimits {
     }
 }
 
+/// The host's own rule for a route hostname (`valid_pattern` without the `*.` form):
+/// lowercase DNS labels of 1 to 63 characters, no edge `-`, at most 253 characters in all.
+pub fn valid_host(h: &str) -> bool {
+    !h.is_empty()
+        && h.len() <= 253
+        && h.split('.').all(|l| {
+            !l.is_empty()
+                && l.len() <= 63
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+                && l.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+}
+
 fn parse_net(s: &str) -> Result<(IpAddr, u8), String> {
     let (addr, prefix) = match s.split_once('/') {
         Some((a, p)) => (a, Some(p)),
