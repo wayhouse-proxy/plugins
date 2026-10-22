@@ -10,7 +10,7 @@ Plugins from this repository are third-party code: install and run them at your 
 | ------ | ---------- | ------------ |
 | [`selftest`](plugins/selftest) | Test plugin: counts its ticks in `state` and logs each one. Install it to prove the plugin pipeline works. | `on_timer` (10 s), `log`, `state` (1 KiB) |
 | [`acme-dns-cloudflare`](plugins/acme-dns-cloudflare) | DNS-provider plugin for the controller's ACME runner: sets and removes the `_acme-challenge` TXT record in Cloudflare DNS. | `on_acme_dns` (and an unused `on_timer`, 1 week), `http` (`api.cloudflare.com`), secret `CLOUDFLARE_API_TOKEN` |
-| [`pelican`](plugins/pelican) | Routes hostnames to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes, so one entry node serves them all. Build it with your own `caps.json` (see its README). | `on_timer` (60 s), `log`, `http` (panel host), secret `PELICAN_TOKEN`, `routes` |
+| [`pelican`](plugins/pelican) | Routes hostnames to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes, so one entry node serves them all. Build it with your own `caps.json` (see its README). | `on_timer` (60 s), `on_webhook` (optional hint), `log`, `http` (panel host), secret `PELICAN_TOKEN`, `routes` |
 
 ## Building
 

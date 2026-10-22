@@ -1,0 +1,478 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "server",
+      "attributes": {
+        "id": 1,
+        "external_id": null,
+        "uuid": "a1b2c3d4-0000-4000-8000-000000000000",
+        "identifier": "a1b2c3d4",
+        "name": "Survival",
+        "description": null,
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 12,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 11,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25566,
+                  "notes": null,
+                  "assigned": true
+                }
+              },
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 12,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25565,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 2,
+        "external_id": null,
+        "uuid": "e5f6a7b8-0000-4000-8000-000000000000",
+        "identifier": "e5f6a7b8",
+        "name": "Creative",
+        "description": null,
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 2,
+        "allocation": 21,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 21,
+                  "ip": "0.0.0.0",
+                  "alias": null,
+                  "port": 25565,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 3,
+        "external_id": null,
+        "uuid": "c9d0e1f2-0000-4000-8000-000000000000",
+        "identifier": "c9d0e1f2",
+        "name": "Frozen",
+        "description": null,
+        "status": "suspended",
+        "suspended": true,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 31,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 0,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 31,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25570,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 4,
+        "external_id": null,
+        "uuid": "0a1b2c3d-0000-4000-8000-000000000000",
+        "identifier": "0a1b2c3d",
+        "name": "Fresh",
+        "description": null,
+        "status": "installing",
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 41,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 0,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 41,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25571,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 5,
+        "external_id": null,
+        "uuid": "4e5f6a7b-0000-4000-8000-000000000000",
+        "identifier": "4e5f6a7b",
+        "name": "Broken",
+        "description": null,
+        "status": "install_failed",
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 51,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 0,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 51,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25572,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 6,
+        "external_id": null,
+        "uuid": "8c9d0e1f-0000-4000-8000-000000000000",
+        "identifier": "8c9d0e1f",
+        "name": "Reinstall",
+        "description": null,
+        "status": "reinstall_failed",
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 61,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 0,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 61,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25573,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 7,
+        "external_id": null,
+        "uuid": "2a3b4c5d-0000-4000-8000-000000000000",
+        "identifier": "2a3b4c5d",
+        "name": "Restore",
+        "description": null,
+        "status": "restoring_backup",
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 71,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 0,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 71,
+                  "ip": "10.0.0.5",
+                  "alias": null,
+                  "port": 25574,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 8,
+        "external_id": null,
+        "uuid": "6e7f8091-0000-4000-8000-000000000000",
+        "identifier": "6e7f8091",
+        "name": "Bare",
+        "description": null,
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": null,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": []
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "total": 8,
+      "count": 8,
+      "per_page": 100,
+      "current_page": 1,
+      "total_pages": 1,
+      "links": {}
+    }
+  }
+}

@@ -98,6 +98,7 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
     }
     #[derive(Deserialize)]
     struct AllocList {
+        object: Option<String>,
         #[serde(default)]
         data: Vec<AllocItem>,
     }
@@ -115,6 +116,19 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
     let list: List = serde_json::from_slice(body).map_err(|e| format!("bad server list: {e}"))?;
     if list.object != "list" {
         return Err(format!("expected a list, got {:?}", list.object));
+    }
+    // A key without Allocations read access still gets the include, as a `null_resource`;
+    // reading that as "no allocations" would withdraw every route.
+    if list.data.iter().any(|i| {
+        i.attributes
+            .relationships
+            .as_ref()
+            .and_then(|r| r.allocations.as_ref())
+            .is_some_and(|l| l.object.as_deref() == Some("null_resource"))
+    }) {
+        return Err(
+            "the API key cannot read allocations: give it read access to Allocations".into(),
+        );
     }
     let servers = list
         .data
@@ -691,6 +705,28 @@ mod plan_tests {
         .unwrap();
         assert_eq!(urls.len(), 2);
         assert_eq!(e.len(), 2);
+    }
+
+    #[test]
+    fn repeated_and_out_of_order_reconciles_converge_on_the_latest_panel_state() {
+        let states = [
+            page(&[(1, "10.0.0.1")], 1),
+            page(&[(1, "10.0.0.1"), (2, "10.0.0.2")], 1),
+            page(&[(2, "10.0.0.2")], 1),
+        ];
+        let run = |i: usize| {
+            plan(|_| Ok(states[i].clone()), &cfg(), &limits())
+                .unwrap()
+                .0
+        };
+        // Calls arrive repeated and out of order; each is a full re-list, so the outcome is
+        // decided by the last panel state read and never by how often or in what order.
+        for i in [0, 2, 1, 1, 0, 2, 2] {
+            let _ = run(i);
+        }
+        assert_eq!(run(2), run(2));
+        assert_eq!(run(2).len(), 1);
+        assert_eq!(run(1).len(), 2);
     }
 
     #[test]
