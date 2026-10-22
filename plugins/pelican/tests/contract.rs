@@ -81,3 +81,54 @@ fn a_key_without_allocation_access_is_an_error_not_an_empty_route_set() {
     let err = panel::parse_page(NO_ALLOCATIONS).unwrap_err();
     assert!(err.contains("Allocations"), "{err}");
 }
+
+// Captured from a live panel (anonymised); see tests/fixtures/README.md.
+const LIVE: &[u8] = include_bytes!("fixtures/servers_list_live.json");
+const LIVE_NODES: &[u8] = include_bytes!("fixtures/nodes_live.json");
+
+fn live_cfg() -> panel::Config {
+    panel::Config::parse(
+        br#"{"panel_url":"https://panel.example","host_template":"{identifier}.mc.example.com"}"#,
+    )
+    .unwrap()
+}
+
+fn live_limits() -> RouteLimits {
+    RouteLimits::from_caps_json(
+        r#"{"routes":{"hosts":["*.mc.example.com"],"backends":["192.0.2.0/24"],"max_entries":10}}"#,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_live_panel_list_parses_and_every_usable_server_routes() {
+    let page = panel::parse_page(LIVE).unwrap();
+    assert_eq!(page.total_pages, 1);
+    assert_eq!(page.servers.len(), 3);
+    let (entries, warnings) = panel::build_routes(&page.servers, &live_cfg(), &live_limits());
+    assert_eq!(entries.len(), 3, "{warnings:?}");
+}
+
+#[test]
+fn live_primary_allocation_is_the_one_allocation_names_even_when_listed_second() {
+    let page = panel::parse_page(LIVE).unwrap();
+    let s = page.servers.iter().find(|s| s.id == 5).unwrap();
+    assert_eq!(s.allocation, Some(13));
+    assert_eq!(
+        s.allocations[0].id, 12,
+        "the primary is not the first listed"
+    );
+    let (entries, _) = panel::build_routes(&page.servers, &live_cfg(), &live_limits());
+    let e = entries
+        .iter()
+        .find(|e| e.host == "00000005.mc.example.com")
+        .unwrap();
+    assert!(e.backend.ends_with(":25565"), "{e:?}");
+}
+
+#[test]
+fn live_node_fqdn_is_a_dns_name_so_node_addresses_stays_config() {
+    let v: serde_json::Value = serde_json::from_slice(LIVE_NODES).unwrap();
+    let fqdn = v["data"][0]["attributes"]["fqdn"].as_str().unwrap();
+    assert!(fqdn.parse::<std::net::IpAddr>().is_err(), "{fqdn}");
+}

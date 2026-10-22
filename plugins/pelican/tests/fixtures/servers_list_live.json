@@ -1,0 +1,211 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "server",
+      "attributes": {
+        "id": 2,
+        "external_id": null,
+        "uuid": "00000002-0000-4000-8000-000000000002",
+        "identifier": "00000002",
+        "name": "Server 2",
+        "description": "",
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 10240,
+          "swap": 0,
+          "disk": 0,
+          "io": 500,
+          "cpu": 600,
+          "threads": "",
+          "oom_disabled": true,
+          "oom_killer": false
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 0,
+          "backups": 10
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 7,
+        "egg": 9,
+        "container": {
+          "startup_command": "redacted",
+          "image": "redacted",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-06-21T10:32:31+00:00",
+        "created_at": "2026-05-13T19:19:59+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 7,
+                  "ip": "192.0.2.10",
+                  "alias": "alias7.example.com",
+                  "port": 25565,
+                  "notes": null,
+                  "assigned": true
+                }
+              },
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 8,
+                  "ip": "192.0.2.10",
+                  "alias": "alias8.example.com",
+                  "port": 24454,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 4,
+        "external_id": null,
+        "uuid": "00000004-0000-4000-8000-000000000004",
+        "identifier": "00000004",
+        "name": "Server 4",
+        "description": "",
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 0,
+          "swap": 0,
+          "disk": 0,
+          "io": 500,
+          "cpu": 0,
+          "threads": "",
+          "oom_disabled": true,
+          "oom_killer": false
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 0,
+          "backups": 10
+        },
+        "user": 1,
+        "node": 2,
+        "allocation": 9,
+        "egg": 17,
+        "container": {
+          "startup_command": "redacted",
+          "image": "redacted",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-06-23T21:05:44+00:00",
+        "created_at": "2026-06-23T11:14:32+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 9,
+                  "ip": "192.0.2.11",
+                  "alias": "alias9.example.com",
+                  "port": 7777,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "object": "server",
+      "attributes": {
+        "id": 5,
+        "external_id": null,
+        "uuid": "00000005-0000-4000-8000-000000000005",
+        "identifier": "00000005",
+        "name": "Server 5",
+        "description": "",
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 4096,
+          "swap": 4096,
+          "disk": 0,
+          "io": 500,
+          "cpu": 0,
+          "threads": "",
+          "oom_disabled": true,
+          "oom_killer": false
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 0,
+          "backups": 5
+        },
+        "user": 1,
+        "node": 2,
+        "allocation": 13,
+        "egg": 18,
+        "container": {
+          "startup_command": "redacted",
+          "image": "redacted",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-10-19T07:55:42+00:00",
+        "created_at": "2026-10-17T18:02:15+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "list",
+            "data": [
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 12,
+                  "ip": "192.0.2.11",
+                  "alias": "alias12.example.com",
+                  "port": 24454,
+                  "notes": null,
+                  "assigned": true
+                }
+              },
+              {
+                "object": "allocation",
+                "attributes": {
+                  "id": 13,
+                  "ip": "192.0.2.11",
+                  "alias": "alias13.example.com",
+                  "port": 25565,
+                  "notes": null,
+                  "assigned": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "total": 3,
+      "count": 3,
+      "per_page": 100,
+      "current_page": 1,
+      "total_pages": 1,
+      "links": {}
+    }
+  }
+}
