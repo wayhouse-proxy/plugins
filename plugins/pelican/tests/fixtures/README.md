@@ -1,5 +1,9 @@
 # Fixtures
 
+**Live captures (2026-10-22, anonymised):** `servers_list_live.json` and `nodes_live.json` are responses of `GET /api/application/servers?include=allocations&per_page=100` and `GET /api/application/nodes` from a running Pelican panel. Names, uuids, identifiers, IPs, aliases and node hostnames are replaced by placeholders; ids, ports, structure and the pagination block are as returned. All three servers had `status: null`.
+
+The files below are not from a panel.
+
 Responses of `GET /api/application/servers?include=allocations`, written from Pelican's source
 (panel commit `b7ea6d2`: `app/Data/Api/Application/ServerData.php`, `AllocationData.php`,
 `app/Data/Api/Envelope.php`, `IncludeContext.php`, `PanelResponse.php`, `app/Enums/ServerState.php`).

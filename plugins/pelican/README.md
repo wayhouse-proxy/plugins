@@ -61,10 +61,15 @@ Without this the poll converges within a minute. With it, a Pelican event trigge
 
 ## What is verified, and how
 
-Checked against Pelican's source (panel commit `b7ea6d2`), **not against a running panel yet** (wayhouse-proxy/plugins#11): the response shapes in `tests/fixtures/` are written from `ServerData.php`, `AllocationData.php`, `Envelope.php`, `IncludeContext.php` and `PanelResponse.php`.
+**Against a live panel** (2026-10-22, a running Pelican panel with two nodes and three servers; anonymised captures in `tests/fixtures/*_live.json`, tested in `tests/contract.rs`):
 
-- `allocation` is the id of the server's primary (default) allocation; `relationships.allocations` lists all of them, the primary is the one `allocation` names. The pagination block is `meta.pagination` with `total_pages` (`lastPage()`, so 1 for an empty list).
-- `status` is `null` or one of `installing`, `install_failed`, `reinstall_failed`, `suspended`, `restoring_backup`. Skipping every non-null value is right: none of them can serve players, and `suspended` also sets the deprecated `suspended` flag.
-- Key permissions: the servers endpoint needs Read on *Servers*; the allocations include needs Read on *Allocations* and is otherwise returned as `null_resource`.
-- Node address: `GET /api/application/nodes` returns a node `fqdn`, a DNS name for the panel-to-Wings link, not necessarily an address the entry node can use, and the plugin cannot resolve DNS. `node_addresses` therefore stays configuration.
-- Webhooks: a configured header is sent as stored (`Http::withHeaders`), the body is a JSON POST with a 30 s timeout. Event names are `eloquent.{created,updated,deleted}: App\Models\<Model>`.
+- The list is `{object: "list", data: [{object: "server", attributes: {...}}], meta: {pagination: {total_pages, ...}}}`, and `?include=allocations` nests `attributes.relationships.allocations` as a list. The plugin parses this and routes every usable server.
+- `allocation` is the id of the primary allocation, and it is not necessarily the first one listed (a server with allocations 12 and 13 had primary 13). An allocation's `alias` can hold a hostname.
+- A node's `fqdn` is a DNS name (the panel's link to Wings), not an address the entry node can use, and the plugin cannot resolve DNS, so `node_addresses` stays configuration.
+- A key with Read on *Servers*, *Allocations* and *Nodes* works for both endpoints.
+
+**Against Pelican's source only** (panel commit `b7ea6d2`; fixtures `servers_list.json` and `servers_list_key_without_allocations.json` are written from `ServerData.php`, `AllocationData.php`, `Envelope.php`, `IncludeContext.php`, `PanelResponse.php`, `ServerState.php`, `ProcessWebhook.php`). Not seen on a live panel:
+
+- `status` is `null` or one of `installing`, `install_failed`, `reinstall_failed`, `suspended`, `restoring_backup`. Skipping every non-null value is right: none can serve players. (The live servers all had `null`.)
+- A key without Read on *Allocations* gets the include as a `null_resource`; the plugin reports an error and keeps the previous routes. The least privilege for the plugin is Read on *Servers* and *Allocations*; *Nodes* is not needed.
+- Webhooks: a configured header is sent as stored, as a JSON POST with a 30 s timeout. Event names are `eloquent.{created,updated,deleted}: App\Models\<Model>`. Which events a transfer fires has not been observed.
