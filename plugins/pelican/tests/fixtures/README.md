@@ -1,6 +1,6 @@
 # Fixtures
 
-**Live captures (2026-10-22, anonymised):** `servers_list_live.json` and `nodes_live.json` are responses of `GET /api/application/servers?include=allocations&per_page=100` and `GET /api/application/nodes` from a running Pelican panel. Names, uuids, identifiers, IPs, aliases and node hostnames are replaced by placeholders; ids, ports, structure and the pagination block are as returned. All three servers had `status: null`.
+**Live captures (2026-10-22, anonymised):** `servers_list_live.json` and `nodes_live.json` are responses of `GET /api/application/servers?include=allocations&per_page=100` and `GET /api/application/nodes` from a running Pelican panel. Names, uuids, identifiers, IPs, aliases and node hostnames are replaced by placeholders; ids, ports, structure and the pagination block of the servers list are as returned. `nodes_live.json` is reduced to the fields the plugin and its tests look at (`id`, `public`, `scheme`, `behind_proxy`, `maintenance_mode`, `fqdn`); the panel sends more per node. All three servers had `status: null`.
 
 The files below are not from a panel.
 
