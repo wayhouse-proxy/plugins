@@ -719,7 +719,8 @@ mod plan_tests {
                 .unwrap()
                 .0
         };
-        // Calls arrive repeated and out of order; each is a full re-list, so the outcome is
+        // Only the pure planning step: the host's own serialization and queue bound are tested
+        // in wayhouse. Calls arrive repeated and out of order; each is a full re-list, so the outcome is
         // decided by the last panel state read and never by how often or in what order.
         for i in [0, 2, 1, 1, 0, 2, 2] {
             let _ = run(i);
