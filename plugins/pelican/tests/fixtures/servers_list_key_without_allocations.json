@@ -1,0 +1,61 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "server",
+      "attributes": {
+        "id": 1,
+        "external_id": null,
+        "uuid": "a1b2c3d4-0000-4000-8000-000000000000",
+        "identifier": "a1b2c3d4",
+        "name": "Survival",
+        "description": null,
+        "status": null,
+        "suspended": false,
+        "limits": {
+          "memory": 1024,
+          "swap": 0,
+          "disk": 5120,
+          "io": 500,
+          "cpu": 0,
+          "threads": null,
+          "oom_disabled": false,
+          "oom_killer": true
+        },
+        "feature_limits": {
+          "databases": 0,
+          "allocations": 2,
+          "backups": 0
+        },
+        "user": 1,
+        "node": 1,
+        "allocation": 12,
+        "egg": 1,
+        "container": {
+          "startup_command": "java -jar server.jar",
+          "image": "ghcr.io/example/java",
+          "installed": 1,
+          "environment": {}
+        },
+        "updated_at": "2026-10-22T09:00:00+00:00",
+        "created_at": "2026-10-22T09:00:00+00:00",
+        "relationships": {
+          "allocations": {
+            "object": "null_resource",
+            "attributes": null
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "total": 1,
+      "count": 1,
+      "per_page": 100,
+      "current_page": 1,
+      "total_pages": 1,
+      "links": {}
+    }
+  }
+}
