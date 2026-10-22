@@ -180,9 +180,25 @@ fn cleanup_stays_inside_the_call_budget() {
     let mut script = vec![zone("z1"), ok(json!(records))];
     script.extend((0..MAX_DELETES).map(|_| ok(json!({}))));
     let mut http = Fake::new(script);
-    run(&req(Op::Cleanup), &mut http).unwrap();
+    let msg = run(&req(Op::Cleanup), &mut http).unwrap();
     assert_eq!(http.calls.len(), 2 + MAX_DELETES);
     assert!(http.calls.len() <= 8);
+    assert_eq!(
+        msg,
+        format!("removed {MAX_DELETES} TXT record(s); more remain")
+    );
+}
+
+#[test]
+fn a_full_listing_page_says_that_more_may_remain() {
+    let records: Vec<Value> = (0..100)
+        .map(|i| json!({"id": format!("r{i}"), "name": "_acme-challenge.panel.example.com", "content": if i == 0 { "tok-en_1" } else { "other" }}))
+        .collect();
+    let mut http = Fake::new(vec![zone("z1"), ok(json!(records)), ok(json!({}))]);
+    assert_eq!(
+        run(&req(Op::Cleanup), &mut http).unwrap(),
+        "removed 1 TXT record(s); more may remain"
+    );
 }
 
 #[test]
