@@ -10,6 +10,7 @@ Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 
 
 - A list page without `meta.pagination.total_pages` is an error, never "one page".
 - If the panel cannot be read, answers with an error, or has more than 8 pages, nothing is published and the previous routes stay (a partial set would withdraw other servers' routes).
+- If the panel's server total differs between two pages (a server was created or deleted while the pages were being read), the whole list is read once more; a second mismatch publishes nothing. A create and a delete in the same instant keep the total and are not noticed; the next tick corrects it.
 - Entries outside the plugin's own declared `routes` (host not covered, backend outside the networks, over `max_entries`) are dropped with a warning in the plugin log, because the host would otherwise refuse the whole set.
 - Two servers rendering to the same hostname: the lower server id wins, the other is logged.
 - Only the Application API's read endpoints are called. The API key is never visible to the plugin: it is a secret slot the host expands into the `Authorization` header.
@@ -20,12 +21,14 @@ Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 
 {
   "panel_url": "https://panel.example",
   "host_template": "{identifier}.mc.example.com",
-  "node_addresses": { "1": "10.0.0.5" }
+  "node_addresses": { "1": "10.0.0.5" },
+  "backend_ports": "25565-25999"
 }
 ```
 
 - `host_template`: `{identifier}` (Pelican's short uuid), `{id}`, `{name}` and `{external_id}` (both lower-cased, non-alphanumerics folded to `-`). A server with no value for a used placeholder is skipped.
 - `node_addresses`: node id to the address the entry node reaches that node at. It wins over the allocation's ip, and is required when the allocation is bound to `0.0.0.0`.
+- `backend_ports` (optional): the ports a route may point at, `"lo-hi"` or one port. A server whose primary allocation is outside it is skipped with a log line. Set it: the `routes.backends` capability limits addresses, **not ports**, so without it an allocation on port 22 of an allowed host would be routed.
 
 Secret slot `PELICAN_TOKEN`: an Application API key. Give it **Read** on *Servers* and *Allocations* and nothing else (Pelican keys have per-resource levels and an IP allowlist). Without *Allocations* the panel does not refuse the request: it answers the include as a `null_resource`, and the plugin reports that as an error and keeps the previous routes. Set it with `PUT /plugins/{id}/secrets/PELICAN_TOKEN`.
 

@@ -23,6 +23,40 @@ pub struct Config {
     /// Node id to the address the entry node reaches it at; wins over the allocation's ip.
     #[serde(default)]
     pub node_addresses: BTreeMap<String, String>,
+    /// Ports a route may point at, `"lo-hi"` (or one port). Unset allows any port on an
+    /// allowed backend address; the `routes.backends` capability limits addresses only.
+    #[serde(default)]
+    pub backend_ports: Option<PortRange>,
+}
+
+/// An inclusive port range, written `"25565-25999"` or `"25565"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub struct PortRange {
+    pub lo: u16,
+    pub hi: u16,
+}
+
+impl PortRange {
+    pub fn contains(self, port: u16) -> bool {
+        (self.lo..=self.hi).contains(&port)
+    }
+}
+
+impl TryFrom<String> for PortRange {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, String> {
+        let bad = || format!("backend_ports {s:?} must be a port or `lo-hi` (1 to 65535)");
+        let (lo, hi) = match s.split_once('-') {
+            Some((lo, hi)) => (lo.trim().parse::<u16>(), hi.trim().parse::<u16>()),
+            None => (s.trim().parse::<u16>(), s.trim().parse::<u16>()),
+        };
+        match (lo, hi) {
+            (Ok(lo), Ok(hi)) if lo >= 1 && lo <= hi => Ok(Self { lo, hi }),
+            _ => Err(bad()),
+        }
+    }
 }
 
 impl Config {
@@ -57,6 +91,9 @@ pub struct Server {
 pub struct Page {
     pub servers: Vec<Server>,
     pub total_pages: u32,
+    /// Servers on the panel when this page was read; differs between pages of one listing when
+    /// a server was created or deleted in between.
+    pub total: u64,
 }
 
 /// Parses one `GET /api/application/servers?include=allocations` response.
@@ -74,6 +111,7 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
     #[derive(Deserialize)]
     struct Pagination {
         total_pages: u32,
+        total: Option<u64>,
     }
     #[derive(Deserialize)]
     struct Item {
@@ -163,14 +201,18 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
         })
         .collect();
     // Without the page count the list could be a partial view; fail closed.
-    let total_pages = list
+    let pagination = list
         .meta
         .and_then(|m| m.pagination)
-        .map(|p| p.total_pages)
         .ok_or("server list has no meta.pagination.total_pages")?;
+    // The total lets `plan` notice a list that changed between two page reads.
+    let total = pagination
+        .total
+        .ok_or("server list has no meta.pagination.total")?;
     Ok(Page {
         servers,
-        total_pages,
+        total_pages: pagination.total_pages,
+        total,
     })
 }
 
@@ -275,6 +317,13 @@ pub fn build_routes(
             ));
             continue;
         }
+        if cfg.backend_ports.is_some_and(|r| !r.contains(primary.port)) {
+            warnings.push(format!(
+                "server {}: backend port {} is outside backend_ports",
+                s.id, primary.port
+            ));
+            continue;
+        }
         if entries.iter().any(|e| e.host == host) {
             warnings.push(format!(
                 "server {}: host {host} is already taken by a lower server id",
@@ -340,6 +389,7 @@ mod tests {
             panel_url: "https://panel.example".into(),
             host_template: tpl.into(),
             node_addresses: BTreeMap::new(),
+            backend_ports: None,
         }
     }
 
@@ -408,6 +458,63 @@ mod tests {
             Config::parse(br#"{"panel_url":"https://p","host_template":"x","oops":1}"#).is_err()
         );
         assert!(Config::parse(b"").is_err());
+    }
+
+    #[test]
+    fn backend_ports_parse_and_reject_nonsense() {
+        let with = |v: &str| {
+            Config::parse(
+                format!(
+                    r#"{{"panel_url":"https://p","host_template":"{{id}}.x","backend_ports":{v}}}"#
+                )
+                .as_bytes(),
+            )
+        };
+        assert_eq!(
+            with(r#""25565-25999""#).unwrap().backend_ports,
+            Some(PortRange {
+                lo: 25565,
+                hi: 25999
+            })
+        );
+        assert_eq!(
+            with(r#""25565""#).unwrap().backend_ports,
+            Some(PortRange {
+                lo: 25565,
+                hi: 25565
+            })
+        );
+        for bad in [
+            r#""0-10""#,
+            r#""10-5""#,
+            r#""a-b""#,
+            r#""70000""#,
+            r#""""#,
+            "5",
+        ] {
+            assert!(with(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_port_outside_backend_ports_is_dropped_with_a_reason() {
+        let mut s = server(1, "a", "10.0.0.9");
+        s.allocations[0].port = 22;
+        let mut c = cfg("{identifier}.mc.example.com");
+        let (e, w) = build_routes(&[s.clone()], &c, &limits(10));
+        assert_eq!(e.len(), 1, "unset allows any port: {w:?}");
+        c.backend_ports = Some(PortRange {
+            lo: 25565,
+            hi: 25999,
+        });
+        let (e, w) = build_routes(&[s.clone()], &c, &limits(10));
+        assert!(e.is_empty());
+        assert!(
+            w[0].contains("port 22") && w[0].contains("backend_ports"),
+            "{w:?}"
+        );
+        s.allocations[0].port = 25565;
+        assert_eq!(build_routes(&[s], &c, &limits(10)).0.len(), 1);
     }
 
     #[test]
@@ -607,12 +714,31 @@ pub fn response_body(doc: &[u8]) -> Result<Vec<u8>, String> {
 /// Reads every page through `fetch` (URL in, response body out) and builds the routes.
 /// Errors, publishing nothing, when a page fails or the list is longer than [`MAX_PAGES`]:
 /// a partial set would withdraw the routes of the servers it did not see.
+///
+/// The pages are read one after another, so a server created or deleted in between shifts the
+/// later pages. When the panel's total differs between two pages the whole listing is read once
+/// more; a second mismatch is an error and nothing is published. (A create and a delete between
+/// two reads leave the total unchanged and are not noticed; the next tick converges.)
 pub fn plan(
     mut fetch: impl FnMut(&str) -> Result<Vec<u8>, String>,
     cfg: &Config,
     limits: &RouteLimits,
 ) -> Result<(Vec<Entry>, Vec<String>), String> {
+    for _ in 0..2 {
+        if let Some(servers) = read_all(&mut fetch, cfg)? {
+            return Ok(build_routes(&servers, cfg, limits));
+        }
+    }
+    Err("the server list changed while it was being read, twice; routes left as they were".into())
+}
+
+/// All servers, or `None` when the panel's total changed between two pages.
+fn read_all(
+    fetch: &mut impl FnMut(&str) -> Result<Vec<u8>, String>,
+    cfg: &Config,
+) -> Result<Option<Vec<Server>>, String> {
     let mut servers = Vec::new();
+    let mut first_total = None;
     let mut page = 1;
     loop {
         let p = parse_page(&fetch(&page_url(&cfg.panel_url, page))?)?;
@@ -622,13 +748,16 @@ pub fn plan(
                 p.total_pages
             ));
         }
+        if *first_total.get_or_insert(p.total) != p.total {
+            return Ok(None);
+        }
         servers.extend(p.servers);
         if page >= p.total_pages {
             break;
         }
         page += 1;
     }
-    Ok(build_routes(&servers, cfg, limits))
+    Ok(Some(servers))
 }
 
 #[cfg(test)]
@@ -636,6 +765,11 @@ mod plan_tests {
     use super::*;
 
     fn page(servers: &[(u64, &str)], total_pages: u32) -> Vec<u8> {
+        page_of(servers, total_pages, servers.len())
+    }
+
+    /// A page of a listing the panel says holds `total` servers.
+    fn page_of(servers: &[(u64, &str)], total_pages: u32, total: usize) -> Vec<u8> {
         let data: Vec<String> = servers
             .iter()
             .map(|(id, ip)| {
@@ -646,7 +780,7 @@ mod plan_tests {
             })
             .collect();
         format!(
-            r#"{{"object":"list","data":[{}],"meta":{{"pagination":{{"total_pages":{total_pages}}}}}}}"#,
+            r#"{{"object":"list","data":[{}],"meta":{{"pagination":{{"total":{total},"total_pages":{total_pages}}}}}}}"#,
             data.join(",")
         )
         .into_bytes()
@@ -728,6 +862,47 @@ mod plan_tests {
         assert_eq!(run(2), run(2));
         assert_eq!(run(2).len(), 1);
         assert_eq!(run(1).len(), 2);
+    }
+
+    #[test]
+    fn a_listing_that_changed_between_pages_is_read_again() {
+        let mut calls = 0;
+        let (e, _) = plan(
+            |u| {
+                calls += 1;
+                // First read: page 2 sees one more server than page 1 did.
+                Ok(match (calls, u.ends_with("page=1")) {
+                    (1, _) => page_of(&[(1, "10.0.0.1")], 2, 2),
+                    (2, _) => page_of(&[(2, "10.0.0.2")], 2, 3),
+                    (_, true) => page_of(&[(1, "10.0.0.1")], 2, 3),
+                    (_, false) => page_of(&[(2, "10.0.0.2"), (3, "10.0.0.3")], 2, 3),
+                })
+            },
+            &cfg(),
+            &limits(),
+        )
+        .unwrap();
+        assert_eq!(calls, 4);
+        assert_eq!(e.len(), 3);
+    }
+
+    #[test]
+    fn a_listing_that_keeps_changing_publishes_nothing() {
+        let mut calls = 0;
+        let r = plan(
+            |u| {
+                calls += 1;
+                Ok(if u.ends_with("page=1") {
+                    page_of(&[(1, "10.0.0.1")], 2, calls)
+                } else {
+                    page_of(&[(2, "10.0.0.2")], 2, calls + 10)
+                })
+            },
+            &cfg(),
+            &limits(),
+        );
+        assert!(r.unwrap_err().contains("changed while"));
+        assert_eq!(calls, 4, "one retry, then give up");
     }
 
     #[test]
