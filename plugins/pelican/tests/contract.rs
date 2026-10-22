@@ -129,6 +129,42 @@ fn live_primary_allocation_is_the_one_allocation_names_even_when_listed_second()
 #[test]
 fn live_node_fqdn_is_a_dns_name_so_node_addresses_stays_config() {
     let v: serde_json::Value = serde_json::from_slice(LIVE_NODES).unwrap();
-    let fqdn = v["data"][0]["attributes"]["fqdn"].as_str().unwrap();
-    assert!(fqdn.parse::<std::net::IpAddr>().is_err(), "{fqdn}");
+    let nodes = v["data"].as_array().unwrap();
+    assert_eq!(nodes.len(), 2);
+    for node in nodes {
+        let fqdn = node["attributes"]["fqdn"].as_str().unwrap();
+        assert!(fqdn.parse::<std::net::IpAddr>().is_err(), "{fqdn}");
+    }
+}
+
+#[test]
+fn live_allocation_alias_is_ignored_and_the_backend_is_the_allocation_ip_and_port() {
+    let v: serde_json::Value = serde_json::from_slice(LIVE).unwrap();
+    let aliased = v["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| {
+            s["attributes"]["relationships"]["allocations"]["data"]
+                .as_array()
+                .unwrap()
+        })
+        .filter(|a| a["attributes"]["alias"].is_string())
+        .count();
+    assert!(aliased > 0, "the capture should hold aliased allocations");
+
+    let page = panel::parse_page(LIVE).unwrap();
+    let (entries, _) = panel::build_routes(&page.servers, &live_cfg(), &live_limits());
+    assert_eq!(entries.len(), page.servers.len());
+    for server in &page.servers {
+        let primary = server
+            .allocations
+            .iter()
+            .find(|a| Some(a.id) == server.allocation)
+            .expect("the primary allocation is listed");
+        let host = format!("{}.mc.example.com", server.identifier);
+        let entry = entries.iter().find(|e| e.host == host).unwrap();
+        assert_eq!(entry.backend, format!("{}:{}", primary.ip, primary.port));
+        assert!(!entry.backend.contains("alias"), "{entry:?}");
+    }
 }
