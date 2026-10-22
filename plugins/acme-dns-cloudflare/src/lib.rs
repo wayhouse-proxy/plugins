@@ -7,7 +7,9 @@
 //!
 //! One guest call may make 8 HTTP requests, so the zone search tries at most
 //! [`MAX_ZONE_TRIES`] names (a host up to five labels deep reaches its zone) and a cleanup
-//! removes at most [`MAX_DELETES`] records.
+//! removes at most [`MAX_DELETES`] records. The host also allows 20 s per guest call and 10 s
+//! per request, so eight slow Cloudflare answers could end the call at the time limit before
+//! the call budget.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -22,6 +24,8 @@ pub const MAX_ZONE_TRIES: usize = 5;
 pub const MAX_DELETES: usize = 2;
 // The worst case (all zone lookups, the listing, all deletes) must fit the host's 8 calls.
 const _: () = assert!(MAX_ZONE_TRIES + 1 + MAX_DELETES <= 8);
+/// Records asked for in one listing (`per_page`); a full page may hide more.
+const LIST_PAGE: usize = 100;
 /// Longest message handed back to the controller.
 pub const MAX_MESSAGE: usize = 480;
 /// Cloudflare's code for a record that already exists.
@@ -96,8 +100,9 @@ fn check_value(value: &str) -> Result<(), String> {
     }
 }
 
-/// `a.b.example.com` gives `a.b.example.com`, `b.example.com`, `example.com`, at most
-/// [`MAX_ZONE_TRIES`], never a bare top-level label.
+/// `a.b.c.d.example.com` gives `a.b.c.d.example.com`, `b.c.d.example.com`, `c.d.example.com`,
+/// `d.example.com`, `example.com`: at most [`MAX_ZONE_TRIES`] names, never a bare top-level
+/// label.
 pub fn zone_candidates(host: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = host;
@@ -186,7 +191,7 @@ fn cleanup(zone: &str, req: &Request, http: &mut impl Http) -> Result<String, St
     let list = http.send(
         "GET",
         &format!(
-            "{API}/zones/{zone}/dns_records?type=TXT&name={}&per_page=100",
+            "{API}/zones/{zone}/dns_records?type=TXT&name={}&per_page={LIST_PAGE}",
             req.fqdn
         ),
         None,
@@ -194,18 +199,19 @@ fn cleanup(zone: &str, req: &Request, http: &mut impl Http) -> Result<String, St
     if !succeeded(&list) {
         return Err(failure(&list));
     }
-    let ids: Vec<&str> = list.body["result"]
+    let listed = list.body["result"]
         .as_array()
         .map(Vec::as_slice)
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let matching: Vec<&str> = listed
         .iter()
         .filter(|r| r["name"].as_str() == Some(req.fqdn.as_str()))
         .filter(|r| r["content"].as_str().map(unquote) == Some(req.value.as_str()))
         .filter_map(|r| r["id"].as_str())
         .filter(|id| valid_id(id))
-        .take(MAX_DELETES)
         .collect();
-    for id in &ids {
+    let ids = &matching[..matching.len().min(MAX_DELETES)];
+    for id in ids {
         let reply = http.send(
             "DELETE",
             &format!("{API}/zones/{zone}/dns_records/{id}"),
@@ -215,9 +221,17 @@ fn cleanup(zone: &str, req: &Request, http: &mut impl Http) -> Result<String, St
             return Err(failure(&reply));
         }
     }
+    // Records past the delete budget, or past the first page of the listing, stay behind.
+    let more = if matching.len() > ids.len() {
+        "; more remain"
+    } else if listed.len() >= LIST_PAGE {
+        "; more may remain"
+    } else {
+        ""
+    };
     Ok(match ids.len() {
-        0 => "nothing to remove".into(),
-        n => format!("removed {n} TXT record(s)"),
+        0 if more.is_empty() => "nothing to remove".into(),
+        n => format!("removed {n} TXT record(s){more}"),
     })
 }
 
