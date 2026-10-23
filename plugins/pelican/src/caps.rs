@@ -56,6 +56,81 @@ impl RouteLimits {
     }
 }
 
+/// The `port_routes` part of the embedded capability declaration, when there is one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortLimits {
+    /// Inclusive entry-port ranges the host may assign.
+    pub ports: Vec<(u16, u16)>,
+    pub udp: bool,
+    pub tcp: bool,
+    pub networks: Vec<(IpAddr, u8)>,
+    pub max_entries: usize,
+}
+
+impl PortLimits {
+    /// Reads `port_routes` out of a `caps.json` document; `None` when it declares none (the
+    /// plugin then publishes no port routes, and never calls the import).
+    pub fn from_caps_json(caps: &str) -> Result<Option<Self>, String> {
+        #[derive(serde::Deserialize)]
+        struct Doc {
+            port_routes: Option<Ports>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Ports {
+            ports: Vec<String>,
+            proto: Vec<String>,
+            backends: Vec<String>,
+            max_entries: usize,
+        }
+        let doc: Doc = serde_json::from_str(caps).map_err(|e| e.to_string())?;
+        let Some(p) = doc.port_routes else {
+            return Ok(None);
+        };
+        let ports = p
+            .ports
+            .iter()
+            .map(|r| parse_ports(r))
+            .collect::<Result<_, _>>()?;
+        let networks = p
+            .backends
+            .iter()
+            .map(|n| parse_net(n))
+            .collect::<Result<_, _>>()?;
+        Ok(Some(Self {
+            ports,
+            udp: p.proto.iter().any(|t| t == "udp"),
+            tcp: p.proto.iter().any(|t| t == "tcp"),
+            networks,
+            max_entries: p.max_entries,
+        }))
+    }
+
+    /// Whether the host may assign `port` as an entry port (so a `prefer` hint is worth sending).
+    pub fn allows_port(&self, port: u16) -> bool {
+        self.ports.iter().any(|&(lo, hi)| (lo..=hi).contains(&port))
+    }
+
+    /// Whether `ip` is inside a declared backend network.
+    pub fn allows_backend(&self, ip: IpAddr) -> bool {
+        self.networks
+            .iter()
+            .any(|&(base, prefix)| in_net(base, prefix, ip))
+    }
+}
+
+fn parse_ports(s: &str) -> Result<(u16, u16), String> {
+    let bad = || format!("{s:?} is not a port or `lo-hi`");
+    let (lo, hi) = s.split_once('-').unwrap_or((s, s));
+    let (lo, hi): (u16, u16) = (
+        lo.trim().parse().map_err(|_| bad())?,
+        hi.trim().parse().map_err(|_| bad())?,
+    );
+    if lo == 0 || lo > hi {
+        return Err(bad());
+    }
+    Ok((lo, hi))
+}
+
 /// The host's own rule for a route hostname (`valid_pattern` without the `*.` form):
 /// lowercase DNS labels of 1 to 63 characters, no edge `-`, at most 253 characters in all.
 pub fn valid_host(h: &str) -> bool {

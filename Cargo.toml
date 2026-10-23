@@ -12,7 +12,7 @@ repository = "https://github.com/wayhouse-proxy/plugins"
 # The plugin ABI lives in the wayhouse repository (cargo finds the crate by name). Pinned
 # to an exact commit; CI builds wayhouse-plugin-check from the same revision, so this
 # revision is the single place to bump when the ABI changes (ABI 0.1 as of this commit; this rev has http, secrets, routes, webhooks, events and the on_acme_dns trigger in the host).
-wayhouse-plugin-abi = { git = "https://github.com/wayhouse-proxy/wayhouse", rev = "de03c5ff27369348945b97c7ad4d37006c3be44c" }
+wayhouse-plugin-abi = { git = "https://github.com/wayhouse-proxy/wayhouse", rev = "8982e761ecd24a142cec927e84466836226f1828" }
 
 [profile.release]
 opt-level = "z"

@@ -1,7 +1,10 @@
 //! The plugin against recorded Pelican Application API responses (see `tests/fixtures/README.md`
 //! for where they come from).
 
-use pelican::{caps::RouteLimits, panel};
+use pelican::{
+    caps::{PortLimits, RouteLimits},
+    panel,
+};
 
 const LIST: &[u8] = include_bytes!("fixtures/servers_list.json");
 const NO_ALLOCATIONS: &[u8] = include_bytes!("fixtures/servers_list_key_without_allocations.json");
@@ -167,4 +170,115 @@ fn live_allocation_alias_is_ignored_and_the_backend_is_the_allocation_ip_and_por
         assert_eq!(entry.backend, format!("{}:{}", primary.ip, primary.port));
         assert!(!entry.backend.contains("alias"), "{entry:?}");
     }
+}
+
+fn port_limits(proto: &str) -> PortLimits {
+    PortLimits::from_caps_json(&format!(
+        r#"{{"port_routes":{{"ports":["25000-25999"],"proto":{proto},"backends":["10.0.0.0/8"],"max_entries":10}}}}"#
+    ))
+    .unwrap()
+    .unwrap()
+}
+
+#[test]
+fn port_routes_key_on_the_server_uuid_and_hint_the_allocation_port() {
+    let page = panel::parse_page(LIST).unwrap();
+    let (entries, warnings) =
+        panel::build_port_routes(&page.servers, &cfg(), &port_limits(r#"["udp","tcp"]"#));
+    let keys: Vec<_> = entries.iter().map(|e| e.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "a1b2c3d4-0000-4000-8000-000000000000",
+            "e5f6a7b8-0000-4000-8000-000000000000"
+        ],
+        "only usable servers, in server id order: {warnings:?}"
+    );
+    let survival = &entries[0];
+    assert_eq!(survival.backend, "10.0.0.5:25565");
+    assert_eq!(survival.proto, panel::PortProto::Both);
+    assert_eq!(survival.prefer, Some(25565));
+    // A wildcard-bound allocation goes to the configured node address, as for hostnames.
+    assert_eq!(entries[1].backend, "10.0.0.6:25565");
+    let doc = serde_json::to_value(survival).unwrap();
+    assert_eq!(
+        doc,
+        serde_json::json!({
+            "key": "a1b2c3d4-0000-4000-8000-000000000000",
+            "backend": "10.0.0.5:25565",
+            "proto": "both",
+            "prefer": 25565
+        })
+    );
+}
+
+#[test]
+fn an_approval_for_one_protocol_publishes_that_protocol() {
+    let page = panel::parse_page(LIST).unwrap();
+    for (proto, want) in [
+        (r#"["udp"]"#, panel::PortProto::Udp),
+        (r#"["tcp"]"#, panel::PortProto::Tcp),
+    ] {
+        let (entries, _) = panel::build_port_routes(&page.servers, &cfg(), &port_limits(proto));
+        assert!(!entries.is_empty());
+        assert!(entries.iter().all(|e| e.proto == want), "{proto}");
+    }
+}
+
+#[test]
+fn the_hint_is_left_out_when_the_allocation_port_is_not_an_approved_entry_port() {
+    let page = panel::parse_page(LIST).unwrap();
+    let narrow = PortLimits::from_caps_json(
+        r#"{"port_routes":{"ports":["30000-30999"],"proto":["udp"],"backends":["10.0.0.0/8"],"max_entries":10}}"#,
+    )
+    .unwrap()
+    .unwrap();
+    let (entries, _) = panel::build_port_routes(&page.servers, &cfg(), &narrow);
+    assert!(!entries.is_empty());
+    assert!(entries.iter().all(|e| e.prefer.is_none()));
+    let doc = serde_json::to_value(&entries[0]).unwrap();
+    assert!(doc.get("prefer").is_none(), "{doc}");
+}
+
+#[test]
+fn backends_outside_the_port_route_networks_or_backend_ports_are_dropped_and_the_cap_holds() {
+    let page = panel::parse_page(LIST).unwrap();
+    let elsewhere = PortLimits::from_caps_json(
+        r#"{"port_routes":{"ports":["25000-25999"],"proto":["udp"],"backends":["192.168.0.0/16"],"max_entries":10}}"#,
+    )
+    .unwrap()
+    .unwrap();
+    let (entries, warnings) = panel::build_port_routes(&page.servers, &cfg(), &elsewhere);
+    assert!(entries.is_empty());
+    assert!(
+        warnings.iter().any(|w| w.contains("port_routes.backends")),
+        "{warnings:?}"
+    );
+
+    let ported = panel::Config::parse(
+        br#"{"panel_url":"https://panel.example","host_template":"{identifier}.mc.example.com","node_addresses":{"2":"10.0.0.6"},"backend_ports":"26000"}"#,
+    )
+    .unwrap();
+    let (entries, _) = panel::build_port_routes(&page.servers, &ported, &port_limits(r#"["udp"]"#));
+    assert!(entries.is_empty(), "outside backend_ports");
+
+    let one = PortLimits::from_caps_json(
+        r#"{"port_routes":{"ports":["25000-25999"],"proto":["udp"],"backends":["10.0.0.0/8"],"max_entries":1}}"#,
+    )
+    .unwrap()
+    .unwrap();
+    let (entries, warnings) = panel::build_port_routes(&page.servers, &cfg(), &one);
+    assert_eq!(entries.len(), 1);
+    assert!(
+        warnings.iter().any(|w| w.contains("max_entries")),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn a_caps_document_without_port_routes_means_no_port_routes() {
+    assert!(PortLimits::from_caps_json(r#"{"log":true}"#)
+        .unwrap()
+        .is_none());
+    assert!(PortLimits::from_caps_json(r#"{"port_routes":{"ports":["x"],"proto":["udp"],"backends":["10.0.0.0/8"],"max_entries":1}}"#).is_err());
 }
