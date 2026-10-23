@@ -258,6 +258,52 @@ pub struct Entry {
     pub backend: String,
 }
 
+/// The backend address of `s`: its primary allocation's port on the node address. `Ok(None)` for
+/// a server that has no primary allocation, `Err` with the warning for one that cannot be used.
+/// [`build_routes`] and [`build_port_routes`] share it, so both say the same thing about the same
+/// server (see [`unseen`]).
+fn backend_of(s: &Server, cfg: &Config) -> Result<Option<(IpAddr, u16)>, String> {
+    let Some(primary) = s
+        .allocation
+        .and_then(|id| s.allocations.iter().find(|a| a.id == id))
+    else {
+        return Ok(None);
+    };
+    if primary.port == 0 {
+        return Err(format!("server {}: allocation has port 0", s.id));
+    }
+    let ip: Option<IpAddr> = match cfg.node_addresses.get(&s.node.to_string()) {
+        Some(a) => a.parse().ok(),
+        None => primary
+            .ip
+            .parse()
+            .ok()
+            .filter(|ip: &IpAddr| !ip.is_unspecified()),
+    };
+    let Some(ip) = ip else {
+        return Err(format!(
+            "server {}: allocation ip {:?} is not usable, set node_addresses[\"{}\"]",
+            s.id, primary.ip, s.node
+        ));
+    };
+    if cfg.backend_ports.is_some_and(|r| !r.contains(primary.port)) {
+        return Err(format!(
+            "server {}: backend port {} is outside backend_ports",
+            s.id, primary.port
+        ));
+    }
+    Ok(Some((ip, primary.port)))
+}
+
+/// The warnings of `warnings` not seen before, remembered in `seen`: one tick builds both route
+/// kinds from the same server list, and a server unusable for both would be logged twice.
+pub fn unseen(seen: &mut std::collections::BTreeSet<String>, warnings: Vec<String>) -> Vec<String> {
+    warnings
+        .into_iter()
+        .filter(|w| seen.insert(w.clone()))
+        .collect()
+}
+
 /// Routes for `servers`, and a line for everything left out and why.
 pub fn build_routes(
     servers: &[Server],
@@ -272,35 +318,18 @@ pub fn build_routes(
         if s.suspended || s.status.is_some() {
             continue;
         }
-        let Some(primary) = s
-            .allocation
-            .and_then(|id| s.allocations.iter().find(|a| a.id == id))
-        else {
-            continue;
+        let (ip, port) = match backend_of(s, cfg) {
+            Ok(Some(b)) => b,
+            Ok(None) => continue,
+            Err(w) => {
+                warnings.push(w);
+                continue;
+            }
         };
-        if primary.port == 0 {
-            warnings.push(format!("server {}: allocation has port 0", s.id));
-            continue;
-        }
         let Some(host) = render_host(&cfg.host_template, s) else {
             warnings.push(format!(
                 "server {}: host_template has no value for it",
                 s.id
-            ));
-            continue;
-        };
-        let ip: Option<IpAddr> = match cfg.node_addresses.get(&s.node.to_string()) {
-            Some(a) => a.parse().ok(),
-            None => primary
-                .ip
-                .parse()
-                .ok()
-                .filter(|ip: &IpAddr| !ip.is_unspecified()),
-        };
-        let Some(ip) = ip else {
-            warnings.push(format!(
-                "server {}: allocation ip {:?} is not usable, set node_addresses[\"{}\"]",
-                s.id, primary.ip, s.node
             ));
             continue;
         };
@@ -322,13 +351,6 @@ pub fn build_routes(
             ));
             continue;
         }
-        if cfg.backend_ports.is_some_and(|r| !r.contains(primary.port)) {
-            warnings.push(format!(
-                "server {}: backend port {} is outside backend_ports",
-                s.id, primary.port
-            ));
-            continue;
-        }
         if entries.iter().any(|e| e.host == host) {
             warnings.push(format!(
                 "server {}: host {host} is already taken by a lower server id",
@@ -343,7 +365,7 @@ pub fn build_routes(
             ));
             continue;
         }
-        let backend = SocketAddr::new(ip, primary.port).to_string();
+        let backend = SocketAddr::new(ip, port).to_string();
         entries.push(Entry { host, backend });
     }
     (entries, warnings)
@@ -392,42 +414,18 @@ pub fn build_port_routes(
         if s.suspended || s.status.is_some() {
             continue;
         }
-        let Some(primary) = s
-            .allocation
-            .and_then(|id| s.allocations.iter().find(|a| a.id == id))
-        else {
-            continue;
-        };
-        if primary.port == 0 {
-            warnings.push(format!("server {}: allocation has port 0", s.id));
-            continue;
-        }
-        let ip: Option<IpAddr> = match cfg.node_addresses.get(&s.node.to_string()) {
-            Some(a) => a.parse().ok(),
-            None => primary
-                .ip
-                .parse()
-                .ok()
-                .filter(|ip: &IpAddr| !ip.is_unspecified()),
-        };
-        let Some(ip) = ip else {
-            warnings.push(format!(
-                "server {}: allocation ip {:?} is not usable, set node_addresses[\"{}\"]",
-                s.id, primary.ip, s.node
-            ));
-            continue;
+        let (ip, port) = match backend_of(s, cfg) {
+            Ok(Some(b)) => b,
+            Ok(None) => continue,
+            Err(w) => {
+                warnings.push(w);
+                continue;
+            }
         };
         if !limits.allows_backend(ip) {
             warnings.push(format!(
                 "server {}: backend {ip} is outside the declared port_routes.backends",
                 s.id
-            ));
-            continue;
-        }
-        if cfg.backend_ports.is_some_and(|r| !r.contains(primary.port)) {
-            warnings.push(format!(
-                "server {}: backend port {} is outside backend_ports",
-                s.id, primary.port
             ));
             continue;
         }
@@ -439,10 +437,13 @@ pub fn build_port_routes(
             continue;
         }
         entries.push(PortEntry {
+            // The panel sends a uuid for every server, so the identifier is only a fallback. If a
+            // server ever gains a uuid later, its key changes and the host gives it a new entry
+            // port: do not rely on the fallback.
             key: s.uuid.clone().unwrap_or_else(|| s.identifier.clone()),
-            backend: SocketAddr::new(ip, primary.port).to_string(),
+            backend: SocketAddr::new(ip, port).to_string(),
             proto,
-            prefer: limits.allows_port(primary.port).then_some(primary.port),
+            prefer: limits.allows_port(port).then_some(port),
         });
     }
     (entries, warnings)
@@ -527,6 +528,23 @@ mod tests {
         let body = LIST.replace("\"relationships\"", "\"other\"");
         let p = parse_page(body.as_bytes()).unwrap();
         assert!(p.servers[0].allocations.is_empty());
+    }
+
+    #[test]
+    fn a_server_unusable_for_both_route_kinds_is_warned_about_once() {
+        let ports = PortLimits::from_caps_json(
+            r#"{"port_routes":{"ports":["25000-25999"],"proto":["udp"],"backends":["10.0.0.0/8"],"max_entries":10}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        let servers = [server(1, "a", "0.0.0.0")];
+        let c = cfg("{identifier}.mc.example.com");
+        let (_, host_warnings) = build_routes(&servers, &c, &limits(10));
+        let (_, port_warnings) = build_port_routes(&servers, &c, &ports);
+        assert_eq!(host_warnings, port_warnings, "same reason, same words");
+        let mut seen = std::collections::BTreeSet::new();
+        assert_eq!(unseen(&mut seen, host_warnings).len(), 1);
+        assert!(unseen(&mut seen, port_warnings).is_empty());
     }
 
     #[test]
