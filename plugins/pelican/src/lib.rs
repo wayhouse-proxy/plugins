@@ -106,8 +106,9 @@ mod guest {
         let ports = caps::PortLimits::from_caps_json(CAPS_JSON)?;
         let servers = panel::read_servers(fetch, &cfg)
             .map_err(|e| format!("{e}; routes left as they were"))?;
+        let mut seen = std::collections::BTreeSet::new();
         let (entries, warnings) = panel::build_routes(&servers, &cfg, &limits);
-        for w in &warnings {
+        for w in &panel::unseen(&mut seen, warnings) {
             say(1, &format!("pelican: {w}"));
         }
         let doc = serde_json::to_string(&entries).expect("entries serialize");
@@ -118,7 +119,7 @@ mod guest {
         let mut published = entries.len();
         if let Some(ports) = ports {
             let (port_entries, warnings) = panel::build_port_routes(&servers, &cfg, &ports);
-            for w in &warnings {
+            for w in &panel::unseen(&mut seen, warnings) {
                 say(1, &format!("pelican: {w}"));
             }
             let doc = serde_json::to_string(&port_entries).expect("entries serialize");
