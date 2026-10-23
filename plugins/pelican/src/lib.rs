@@ -6,6 +6,12 @@
 //! wildcard DNS record at the one wayhouse entry node: adding, moving or deleting a Pelican
 //! server then needs no DNS or firewall edit anywhere, the next tick moves the route.
 //!
+//! When the module's capability declaration also holds `port_routes`, the same listing is
+//! published with `port_routes_set` for games that carry no hostname (UDP): one entry per
+//! server, keyed by its uuid, with the allocation port as the preferred entry port. The host
+//! assigns and keeps the entry port per server, so players keep one address when a server
+//! moves between nodes.
+//!
 //! The panel host, the claimable hostnames and the backend networks live in the module's
 //! capability declaration, which the host reads without running the module, so they are fixed
 //! when it is built (see the README). `init` only takes the non-secret settings in
@@ -46,6 +52,7 @@ mod guest {
     extern "C" {
         fn log(level: i32, ptr: i32, len: i32);
         fn routes_set(ptr: i32, len: i32) -> i32;
+        fn port_routes_set(ptr: i32, len: i32) -> i32;
         fn http_request(ptr: i32, len: i32) -> i32;
         fn http_read(out_ptr: i32, out_cap: i32) -> i32;
         fn webhook_respond(ptr: i32, len: i32) -> i32;
@@ -96,8 +103,10 @@ mod guest {
             .clone()
             .ok_or("no valid config, nothing published")?;
         let limits = caps::RouteLimits::from_caps_json(CAPS_JSON)?;
-        let (entries, warnings) = panel::plan(fetch, &cfg, &limits)
+        let ports = caps::PortLimits::from_caps_json(CAPS_JSON)?;
+        let servers = panel::read_servers(fetch, &cfg)
             .map_err(|e| format!("{e}; routes left as they were"))?;
+        let (entries, warnings) = panel::build_routes(&servers, &cfg, &limits);
         for w in &warnings {
             say(1, &format!("pelican: {w}"));
         }
@@ -106,7 +115,20 @@ mod guest {
         if unsafe { routes_set(doc.as_ptr() as i32, doc.len() as i32) } != 0 {
             return Err("the host refused the route set".into());
         }
-        Ok(entries.len())
+        let mut published = entries.len();
+        if let Some(ports) = ports {
+            let (port_entries, warnings) = panel::build_port_routes(&servers, &cfg, &ports);
+            for w in &warnings {
+                say(1, &format!("pelican: {w}"));
+            }
+            let doc = serde_json::to_string(&port_entries).expect("entries serialize");
+            // SAFETY: pointer and length describe `doc`, valid for the call.
+            if unsafe { port_routes_set(doc.as_ptr() as i32, doc.len() as i32) } != 0 {
+                return Err("the host refused the port route set".into());
+            }
+            published += port_entries.len();
+        }
+        Ok(published)
     }
 
     fn report(r: &Result<usize, String>) {
@@ -149,6 +171,10 @@ mod tests {
         assert!(v.get("state").is_none(), "pelican keeps no state");
         // The same document must parse as the route limits `on_timer` filters with.
         caps::RouteLimits::from_caps_json(CAPS_JSON).unwrap();
+        let ports = caps::PortLimits::from_caps_json(CAPS_JSON)
+            .unwrap()
+            .expect("the shipped declaration also asks for port routes");
+        assert!(ports.udp && ports.tcp, "game servers speak both");
     }
 
     #[test]

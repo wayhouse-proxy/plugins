@@ -10,7 +10,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use serde::Deserialize;
 
-use crate::caps::RouteLimits;
+use crate::caps::{PortLimits, RouteLimits};
 
 /// The plugin's non-secret `init` config.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -75,6 +75,8 @@ pub struct Allocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Server {
     pub id: u64,
+    /// Pelican's `uuid`: the stable identity of a server, the key of its port route.
+    pub uuid: Option<String>,
     pub identifier: String,
     pub name: String,
     pub external_id: Option<String>,
@@ -121,6 +123,8 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
     struct Attrs {
         id: u64,
         external_id: Option<String>,
+        #[serde(default)]
+        uuid: Option<String>,
         identifier: String,
         name: String,
         #[serde(default)]
@@ -189,6 +193,7 @@ pub fn parse_page(body: &[u8]) -> Result<Page, String> {
                 .unwrap_or_default();
             Server {
                 id: a.id,
+                uuid: a.uuid,
                 identifier: a.identifier,
                 name: a.name,
                 external_id: a.external_id,
@@ -344,6 +349,105 @@ pub fn build_routes(
     (entries, warnings)
 }
 
+/// Which transports a port route serves, as the host's `port_routes_set` spells them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PortProto {
+    Udp,
+    Tcp,
+    Both,
+}
+
+/// A port route as the host's `port_routes_set` takes it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PortEntry {
+    /// The server's uuid: the host keeps one entry port per key, wherever the server moves.
+    pub key: String,
+    pub backend: String,
+    pub proto: PortProto,
+    /// The allocation port, so the entry port usually equals the number the panel shows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefer: Option<u16>,
+}
+
+/// Port routes for `servers`: one per usable server, keyed by its uuid (its identifier when
+/// the panel sent none), serving every transport the plugin may use. Same eligibility as
+/// [`build_routes`] apart from the hostname.
+pub fn build_port_routes(
+    servers: &[Server],
+    cfg: &Config,
+    limits: &PortLimits,
+) -> (Vec<PortEntry>, Vec<String>) {
+    let proto = match (limits.udp, limits.tcp) {
+        (true, true) => PortProto::Both,
+        (true, false) => PortProto::Udp,
+        (false, true) => PortProto::Tcp,
+        (false, false) => return (Vec::new(), vec!["port_routes allows no protocol".into()]),
+    };
+    let mut sorted: Vec<&Server> = servers.iter().collect();
+    sorted.sort_by_key(|s| s.id);
+    let mut entries: Vec<PortEntry> = Vec::new();
+    let mut warnings = Vec::new();
+    for s in sorted {
+        if s.suspended || s.status.is_some() {
+            continue;
+        }
+        let Some(primary) = s
+            .allocation
+            .and_then(|id| s.allocations.iter().find(|a| a.id == id))
+        else {
+            continue;
+        };
+        if primary.port == 0 {
+            warnings.push(format!("server {}: allocation has port 0", s.id));
+            continue;
+        }
+        let ip: Option<IpAddr> = match cfg.node_addresses.get(&s.node.to_string()) {
+            Some(a) => a.parse().ok(),
+            None => primary
+                .ip
+                .parse()
+                .ok()
+                .filter(|ip: &IpAddr| !ip.is_unspecified()),
+        };
+        let Some(ip) = ip else {
+            warnings.push(format!(
+                "server {}: allocation ip {:?} is not usable, set node_addresses[\"{}\"]",
+                s.id, primary.ip, s.node
+            ));
+            continue;
+        };
+        if !limits.allows_backend(ip) {
+            warnings.push(format!(
+                "server {}: backend {ip} is outside the declared port_routes.backends",
+                s.id
+            ));
+            continue;
+        }
+        if cfg.backend_ports.is_some_and(|r| !r.contains(primary.port)) {
+            warnings.push(format!(
+                "server {}: backend port {} is outside backend_ports",
+                s.id, primary.port
+            ));
+            continue;
+        }
+        if entries.len() >= limits.max_entries {
+            warnings.push(format!(
+                "server {}: dropped, port_routes.max_entries is {}",
+                s.id, limits.max_entries
+            ));
+            continue;
+        }
+        entries.push(PortEntry {
+            key: s.uuid.clone().unwrap_or_else(|| s.identifier.clone()),
+            backend: SocketAddr::new(ip, primary.port).to_string(),
+            proto,
+            prefer: limits.allows_port(primary.port).then_some(primary.port),
+        });
+    }
+    (entries, warnings)
+}
+
 /// Most pages one tick reads (the host allows 8 http calls per guest call).
 pub const MAX_PAGES: u32 = 8;
 
@@ -369,6 +473,7 @@ mod tests {
     fn server(id: u64, name: &str, alloc_ip: &str) -> Server {
         Server {
             id,
+            uuid: None,
             identifier: format!("id{id}"),
             name: name.into(),
             external_id: None,
@@ -720,13 +825,22 @@ pub fn response_body(doc: &[u8]) -> Result<Vec<u8>, String> {
 /// more; a second mismatch is an error and nothing is published. (A create and a delete between
 /// two reads leave the total unchanged and are not noticed; the next tick converges.)
 pub fn plan(
-    mut fetch: impl FnMut(&str) -> Result<Vec<u8>, String>,
+    fetch: impl FnMut(&str) -> Result<Vec<u8>, String>,
     cfg: &Config,
     limits: &RouteLimits,
 ) -> Result<(Vec<Entry>, Vec<String>), String> {
+    Ok(build_routes(&read_servers(fetch, cfg)?, cfg, limits))
+}
+
+/// Every server of the panel, read as [`plan`] describes; one listing serves both the
+/// hostname routes and the port routes of a tick.
+pub fn read_servers(
+    mut fetch: impl FnMut(&str) -> Result<Vec<u8>, String>,
+    cfg: &Config,
+) -> Result<Vec<Server>, String> {
     for _ in 0..2 {
         if let Some(servers) = read_all(&mut fetch, cfg)? {
-            return Ok(build_routes(&servers, cfg, limits));
+            return Ok(servers);
         }
     }
     Err("the server list changed while it was being read, twice; routes left as they were".into())

@@ -127,7 +127,7 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 [[package]]
 name = "wayhouse-plugin-abi"
 version = "0.2.0"
-source = "git+https://github.com/wayhouse-proxy/wayhouse?rev=de03c5ff27369348945b97c7ad4d37006c3be44c#de03c5ff27369348945b97c7ad4d37006c3be44c"
+source = "git+https://github.com/wayhouse-proxy/wayhouse?rev=8982e761ecd24a142cec927e84466836226f1828#8982e761ecd24a142cec927e84466836226f1828"
 
 [[package]]
 name = "zmij"
