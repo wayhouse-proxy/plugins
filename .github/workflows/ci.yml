@@ -16,7 +16,7 @@ env:
   CARGO_INCREMENTAL: "0"
   RUSTFLAGS: "-D warnings"
   # Keep in step with wayhouse-plugin-abi's rev in Cargo.toml.
-  WAYHOUSE_REV: 8982e761ecd24a142cec927e84466836226f1828
+  WAYHOUSE_REV: 10201de6bdf0ae7a8ada5a1ca9e7a416fbc9766f
 
 permissions:
   contents: read
@@ -47,7 +47,10 @@ jobs:
           set -euo pipefail
           for f in target/wasm32-unknown-unknown/release/*.wasm; do
             echo "== $f"
-            wayhouse-plugin-check "$f"
+            name=$(basename "$f" .wasm)
+            # A plugin with required options ships a sample config to check against.
+            cfg=$(ls "plugins/${name//_/-}/check-config.json" 2>/dev/null || true)
+            wayhouse-plugin-check "$f" $cfg
           done
 
   # The one check to require in the branch ruleset.

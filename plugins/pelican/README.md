@@ -19,7 +19,8 @@ Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 
 
 ```json
 {
-  "panel_url": "https://panel.example",
+  "panel_host": "panel.example",
+  "route_host": "*.mc.example.com",
   "host_template": "{identifier}.mc.example.com",
   "node_addresses": { "1": "10.0.0.5" },
   "backend_ports": "25565-25999"
@@ -32,23 +33,22 @@ Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 
 
 Secret slot `PELICAN_TOKEN`: an Application API key. Give it **Read** on *Servers* and *Allocations* and nothing else (Pelican keys have per-resource levels and an IP allowlist). Without *Allocations* the panel does not refuse the request: it answers the include as a `null_resource`, and the plugin reports that as an error and keeps the previous routes. Set it with `PUT /plugins/{id}/secrets/PELICAN_TOKEN`.
 
-## Build it for your deployment
+## Install options
 
-A module's capability declaration is embedded in the module and read without running it, so the panel host, the hostnames the plugin may claim and the backend networks cannot be set at install time (tracked upstream). Copy [`caps.json`](caps.json), edit `http.hosts`, `secrets[0].hosts`, `routes.hosts`, `routes.backends` and `routes.max_entries`, and build with it:
+The module declares install options (ABI 0.2), so one prebuilt module fits any deployment: the values below are the install `config`, and the host turns `panel_host`, `route_host`, `node_cidr` and `entry_ports` into the capabilities the operator approves. Nothing is built per deployment any more.
 
-```sh
-WAYHOUSE_PELICAN_CAPS=/path/to/my-caps.json cargo build --release --target wasm32-unknown-unknown -p pelican
-```
-
-The checked-in `caps.json` uses placeholders (`panel.example`, `*.mc.example.com`, `10.0.0.0/8`) and is what CI builds.
+- `panel_host`: hostname of the panel. The plugin may call this host (HTTPS, port 443) and the `PELICAN_TOKEN` secret is bound to it.
+- `route_host`: the hostnames the plugin may route, an exact name or `*.suffix`; cover the domain in `host_template`.
+- `node_cidr` (default `10.0.0.0/8`): the network the nodes' addresses must be in, for routes and port routes.
+- `entry_ports` (default `30000-30999`): the entry-port range wayhouse may assign to port routes.
 
 ## Operator guide: one entry node
 
 1. **Wildcard DNS.** Point `*.mc.example.com` (the domain in `host_template`) at the wayhouse entry node. This is the only DNS record; new servers need none.
 2. **Reachability.** The entry node must be able to open a TCP connection to every Pelican node's allocation `ip:port`, over a private network or a wayhouse tunnel. Pelican already needs those game ports open on its nodes, so the plugin adds no firewall rule; "no firewall edits" only holds if the entry node is allowed to reach the nodes from the start. Where an allocation is bound to `0.0.0.0` or a public address the entry node should not use, set `node_addresses`.
-3. **Hostname routing and entry ports.** Routes keyed by hostname work for protocols that carry one: HTTP, TLS (SNI) and games a sniffer can read it from (for example Minecraft Java). Games without a hostname (Source, Valheim and similar, UDP included) are routed by entry port instead: when the baked `caps.json` declares `port_routes`, the plugin publishes one port route per usable server, keyed by the server's uuid, and wayhouse picks the entry port (see "Port routes" in the wayhouse plugin docs). The port stays with the server, also when its backend moves, and is shown first in the Plugins page. Open the entry range once: the listener's `bind:` range (with `plugin_routes: { type: port }`) and the capability's `ports` must cover it. The plugin hints the allocation port as the preferred entry port, but only when it lies inside the approved `ports`; otherwise wayhouse picks one. A port freed by a deleted server is quarantined for 24 h.
+3. **Hostname routing and entry ports.** Routes keyed by hostname work for protocols that carry one: HTTP, TLS (SNI) and games a sniffer can read it from (for example Minecraft Java). Games without a hostname (Source, Valheim and similar, UDP included) are routed by entry port instead: when the module declares `port_routes` (it does), the plugin publishes one port route per usable server, keyed by the server's uuid, and wayhouse picks the entry port (see "Port routes" in the wayhouse plugin docs). The port stays with the server, also when its backend moves, and is shown first in the Plugins page. Open the entry range once: the listener's `bind:` range (with `plugin_routes: { type: port }`) and the capability's `ports` must cover it. The plugin hints the allocation port as the preferred entry port, but only when it lies inside the approved `ports`; otherwise wayhouse picks one. A port freed by a deleted server is quarantined for 24 h.
 4. **API key.** In the panel create an Application API key with **Read** on *Servers* and *Allocations* (see above).
-5. **Build and install the plugin** with your own `caps.json` (see above), then install it with the config above and set the secret: `PUT /plugins/{id}/secrets/PELICAN_TOKEN`. Approve the declared capabilities. Updating an install from a build without `on_webhook` to one with it needs that new trigger approved again.
+5. **Install the plugin** with the config above and set the secret: `PUT /plugins/{id}/secrets/PELICAN_TOKEN`. Approve the effective capabilities the upload shows for your config. Updating an install from a build without `on_webhook` to one with it needs that new trigger approved again.
 6. **`host_template`.** Prefer `{identifier}` or `{id}`: they are always set and never change. `{name}` and `{external_id}` change when someone renames a server, and a server without a value for a used placeholder gets no route.
 7. **Limits of one poll.** At most 8 pages of 100 servers (800) are read, and a response is capped at 1 MiB. A panel with more than that, or a response over the cap, publishes nothing and keeps the previous routes (the plugin logs why), so a very large panel needs a plugin change before it can use this. The whole reconcile, up to 8 panel requests, must also fit the host's time limit for one plugin call, on the webhook path as on the timer; a slow panel can make a call fail (webhook: `502`).
 

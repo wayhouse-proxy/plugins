@@ -11,7 +11,7 @@ const NO_ALLOCATIONS: &[u8] = include_bytes!("fixtures/servers_list_key_without_
 
 fn cfg() -> panel::Config {
     panel::Config::parse(
-        br#"{"panel_url":"https://panel.example","host_template":"{identifier}.mc.example.com","node_addresses":{"2":"10.0.0.6"}}"#,
+        br#"{"panel_host":"panel.example","route_host":"*.mc.example.com","host_template":"{identifier}.mc.example.com","node_addresses":{"2":"10.0.0.6"}}"#,
     )
     .unwrap()
 }
@@ -91,7 +91,7 @@ const LIVE_NODES: &[u8] = include_bytes!("fixtures/nodes_live.json");
 
 fn live_cfg() -> panel::Config {
     panel::Config::parse(
-        br#"{"panel_url":"https://panel.example","host_template":"{identifier}.mc.example.com"}"#,
+        br#"{"panel_host":"panel.example","route_host":"*.mc.example.com","host_template":"{identifier}.mc.example.com"}"#,
     )
     .unwrap()
 }
@@ -256,7 +256,7 @@ fn backends_outside_the_port_route_networks_or_backend_ports_are_dropped_and_the
     );
 
     let ported = panel::Config::parse(
-        br#"{"panel_url":"https://panel.example","host_template":"{identifier}.mc.example.com","node_addresses":{"2":"10.0.0.6"},"backend_ports":"26000"}"#,
+        br#"{"panel_host":"panel.example","route_host":"*.mc.example.com","host_template":"{identifier}.mc.example.com","node_addresses":{"2":"10.0.0.6"},"backend_ports":"26000"}"#,
     )
     .unwrap();
     let (entries, _) = panel::build_port_routes(&page.servers, &ported, &port_limits(r#"["udp"]"#));
