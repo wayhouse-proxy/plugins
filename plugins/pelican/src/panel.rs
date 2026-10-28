@@ -16,8 +16,16 @@ use crate::caps::{PortLimits, RouteLimits};
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// Base URL of the panel, for example `https://panel.example`.
-    pub panel_url: String,
+    /// Hostname of the panel (an option bound to `http.hosts` and the secret slot).
+    pub panel_host: String,
+    /// Hostname pattern the plugin may route, `name` or `*.suffix` (bound to `routes.hosts`).
+    pub route_host: String,
+    /// Network of the nodes' addresses (bound to the `routes` and `port_routes` backends).
+    #[serde(default = "default_node_cidr")]
+    pub node_cidr: String,
+    /// Entry-port range for port routes (bound to `port_routes.ports`).
+    #[serde(default = "default_entry_ports")]
+    pub entry_ports: String,
     /// Hostname per server; `{identifier}`, `{name}` (slugified), `{external_id}` and `{id}`.
     pub host_template: String,
     /// Node id to the address the entry node reaches it at; wins over the allocation's ip.
@@ -27,6 +35,16 @@ pub struct Config {
     /// allowed backend address; the `routes.backends` capability limits addresses only.
     #[serde(default)]
     pub backend_ports: Option<PortRange>,
+}
+
+// Keep in step with the `default`s in manifest.json: the host applies them to the capabilities
+// but passes `init` the config unchanged.
+fn default_node_cidr() -> String {
+    "10.0.0.0/8".into()
+}
+
+fn default_entry_ports() -> String {
+    "30000-30999".into()
 }
 
 /// An inclusive port range, written `"25565-25999"` or `"25565"`.
@@ -62,6 +80,27 @@ impl TryFrom<String> for PortRange {
 impl Config {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(bytes).map_err(|e| format!("bad config: {e}"))
+    }
+
+    pub fn panel_url(&self) -> String {
+        format!("https://{}", self.panel_host)
+    }
+
+    /// The embedded capability declaration with the `"${opt:NAME}"` placeholders replaced by
+    /// this config's option values: what the host approved and enforces.
+    pub fn effective_caps(&self, caps: &str) -> String {
+        let options = [
+            ("panel_host", &self.panel_host),
+            ("route_host", &self.route_host),
+            ("node_cidr", &self.node_cidr),
+            ("entry_ports", &self.entry_ports),
+        ];
+        options
+            .iter()
+            .fold(caps.to_string(), |caps, (name, value)| {
+                let value = serde_json::to_string(value).expect("a string serializes");
+                caps.replace(&format!("\"${{opt:{name}}}\""), &value)
+            })
     }
 }
 
@@ -492,7 +531,10 @@ mod tests {
 
     fn cfg(tpl: &str) -> Config {
         Config {
-            panel_url: "https://panel.example".into(),
+            panel_host: "panel.example".into(),
+            route_host: "*.mc.example.com".into(),
+            node_cidr: default_node_cidr(),
+            entry_ports: default_entry_ports(),
             host_template: tpl.into(),
             node_addresses: BTreeMap::new(),
             backend_ports: None,
@@ -575,11 +617,15 @@ mod tests {
 
     #[test]
     fn config_requires_panel_and_template_and_rejects_unknown() {
-        assert!(Config::parse(br#"{"panel_url":"https://p","host_template":"{id}.x"}"#).is_ok());
-        assert!(Config::parse(br#"{"panel_url":"https://p"}"#).is_err());
-        assert!(
-            Config::parse(br#"{"panel_url":"https://p","host_template":"x","oops":1}"#).is_err()
-        );
+        assert!(Config::parse(
+            br#"{"panel_host":"p","route_host":"*.x","host_template":"{id}.x"}"#
+        )
+        .is_ok());
+        assert!(Config::parse(br#"{"panel_host":"p","route_host":"*.x"}"#).is_err());
+        assert!(Config::parse(
+            br#"{"panel_host":"p","route_host":"*.x","host_template":"x","oops":1}"#
+        )
+        .is_err());
         assert!(Config::parse(b"").is_err());
     }
 
@@ -588,7 +634,7 @@ mod tests {
         let with = |v: &str| {
             Config::parse(
                 format!(
-                    r#"{{"panel_url":"https://p","host_template":"{{id}}.x","backend_ports":{v}}}"#
+                    r#"{{"panel_host":"p","route_host":"*.x","host_template":"{{id}}.x","backend_ports":{v}}}"#
                 )
                 .as_bytes(),
             )
@@ -873,7 +919,7 @@ fn read_all(
     let mut first_total = None;
     let mut page = 1;
     loop {
-        let p = parse_page(&fetch(&page_url(&cfg.panel_url, page))?)?;
+        let p = parse_page(&fetch(&page_url(&cfg.panel_url(), page))?)?;
         if p.total_pages > MAX_PAGES {
             return Err(format!(
                 "the panel has {} pages of servers, more than the {MAX_PAGES} one tick can read",
@@ -919,7 +965,7 @@ mod plan_tests {
     }
 
     fn cfg() -> Config {
-        Config::parse(br#"{"panel_url":"https://panel.example","host_template":"{identifier}.mc.example.com"}"#).unwrap()
+        Config::parse(br#"{"panel_host":"panel.example","route_host":"*.mc.example.com","host_template":"{identifier}.mc.example.com"}"#).unwrap()
     }
 
     fn limits() -> RouteLimits {

@@ -35,8 +35,10 @@ pub mod webhook {
 // Re-export so the linker keeps `alloc` and the ABI section.
 pub use wayhouse_plugin_abi::alloc;
 
-/// The capability declaration baked in by `build.rs`.
-pub const CAPS_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/caps.json"));
+/// The capability declaration, with `"${opt:NAME}"` placeholders the operator fills in at install.
+pub const CAPS_JSON: &str = include_str!("../caps.json");
+/// The manifest: the install options and which placeholders they bind.
+pub const MANIFEST_JSON: &str = include_str!("../manifest.json");
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
@@ -47,6 +49,10 @@ mod guest {
     #[used]
     #[link_section = "wayhouse.plugin-caps"]
     static CAPS: [u8; CAPS_JSON.len()] = *CAPS_JSON.as_bytes().first_chunk().unwrap();
+
+    #[used]
+    #[link_section = "wayhouse.plugin-manifest"]
+    static MANIFEST: [u8; MANIFEST_JSON.len()] = *MANIFEST_JSON.as_bytes().first_chunk().unwrap();
 
     #[link(wasm_import_module = "wayhouse")]
     extern "C" {
@@ -87,7 +93,7 @@ mod guest {
             unsafe { std::slice::from_raw_parts(config_ptr as *const u8, config_len as usize) };
         match panel::Config::parse(bytes) {
             Ok(c) => {
-                say(2, &format!("pelican init, panel {}", c.panel_url));
+                say(2, &format!("pelican init, panel {}", c.panel_host));
                 *CONFIG.lock().unwrap() = Some(c);
             }
             Err(e) => say(0, &format!("pelican init: {e}")),
@@ -102,8 +108,9 @@ mod guest {
             .unwrap()
             .clone()
             .ok_or("no valid config, nothing published")?;
-        let limits = caps::RouteLimits::from_caps_json(CAPS_JSON)?;
-        let ports = caps::PortLimits::from_caps_json(CAPS_JSON)?;
+        let caps = cfg.effective_caps(CAPS_JSON);
+        let limits = caps::RouteLimits::from_caps_json(&caps)?;
+        let ports = caps::PortLimits::from_caps_json(&caps)?;
         let servers = panel::read_servers(fetch, &cfg)
             .map_err(|e| format!("{e}; routes left as they were"))?;
         let mut seen = std::collections::BTreeSet::new();
@@ -170,12 +177,66 @@ mod tests {
         assert!(v["http"]["hosts"].as_array().is_some_and(|h| !h.is_empty()));
         assert_eq!(v["secrets"][0]["name"], "PELICAN_TOKEN");
         assert!(v.get("state").is_none(), "pelican keeps no state");
-        // The same document must parse as the route limits `on_timer` filters with.
-        caps::RouteLimits::from_caps_json(CAPS_JSON).unwrap();
-        let ports = caps::PortLimits::from_caps_json(CAPS_JSON)
+        // With the options filled in, the document must parse as the limits `on_timer` filters with.
+        let caps = sample_config().effective_caps(CAPS_JSON);
+        caps::RouteLimits::from_caps_json(&caps).unwrap();
+        let ports = caps::PortLimits::from_caps_json(&caps)
             .unwrap()
             .expect("the shipped declaration also asks for port routes");
         assert!(ports.udp && ports.tcp, "game servers speak both");
+    }
+
+    fn sample_config() -> panel::Config {
+        panel::Config::parse(
+            br#"{"panel_host":"panel.example","route_host":"*.mc.example.com","host_template":"{id}.mc.example.com"}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn every_placeholder_is_bound_by_the_manifest_and_filled_by_the_config() {
+        let manifest: serde_json::Value = serde_json::from_str(MANIFEST_JSON).unwrap();
+        let bound: Vec<_> = manifest["bindings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["option"].as_str().unwrap().to_string())
+            .collect();
+        let effective = sample_config().effective_caps(CAPS_JSON);
+        assert!(
+            !effective.contains("${opt:"),
+            "unfilled placeholder: {effective}"
+        );
+        for name in &bound {
+            assert!(
+                CAPS_JSON.contains(&format!("\"${{opt:{name}}}\"")),
+                "{name} unused"
+            );
+        }
+        assert_eq!(CAPS_JSON.matches("${opt:").count(), 6);
+        let v: serde_json::Value = serde_json::from_str(&effective).unwrap();
+        assert_eq!(v["http"]["hosts"][0]["host"], "panel.example");
+        assert_eq!(v["routes"]["backends"][0], "10.0.0.0/8");
+        assert_eq!(v["port_routes"]["ports"][0], "30000-30999");
+    }
+
+    #[test]
+    fn manifest_defaults_match_the_config_defaults() {
+        let manifest: serde_json::Value = serde_json::from_str(MANIFEST_JSON).unwrap();
+        let props = &manifest["options"]["properties"];
+        let c = sample_config();
+        assert_eq!(props["node_cidr"]["default"], c.node_cidr);
+        assert_eq!(props["entry_ports"]["default"], c.entry_ports);
+        // Every Config field is an option, or the schema's additionalProperties:false refuses it.
+        for k in [
+            "panel_host",
+            "route_host",
+            "host_template",
+            "node_addresses",
+            "backend_ports",
+        ] {
+            assert!(props.get(k).is_some(), "{k} missing from the options");
+        }
     }
 
     #[test]
@@ -189,7 +250,8 @@ mod tests {
 
     #[test]
     fn secret_slot_is_bound_to_a_declared_http_host() {
-        let v: serde_json::Value = serde_json::from_str(CAPS_JSON).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&sample_config().effective_caps(CAPS_JSON)).unwrap();
         let hosts: Vec<_> = v["http"]["hosts"]
             .as_array()
             .unwrap()

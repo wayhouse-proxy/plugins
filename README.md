@@ -10,7 +10,7 @@ Plugins from this repository are third-party code: install and run them at your 
 | ------ | ---------- | ------------ |
 | [`selftest`](plugins/selftest) | Test plugin: counts its ticks in `state` and logs each one. Install it to prove the plugin pipeline works. | `on_timer` (10 s), `log`, `state` (1 KiB) |
 | [`acme-dns-cloudflare`](plugins/acme-dns-cloudflare) | DNS-provider plugin for the controller's ACME runner: sets and removes the `_acme-challenge` TXT record in Cloudflare DNS. | `on_acme_dns` (and an unused `on_timer`, 1 week), `http` (`api.cloudflare.com`), secret `CLOUDFLARE_API_TOKEN` |
-| [`pelican`](plugins/pelican) | Routes hostnames, and entry ports for games without a hostname, to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes and port routes, so one entry node serves them all. Build it with your own `caps.json` (see its README). | `on_timer` (60 s), `on_webhook` (optional hint), `log`, `http` (panel host), secret `PELICAN_TOKEN`, `routes`, `port_routes` (needs a wayhouse 0.3.0 host) |
+| [`pelican`](plugins/pelican) | Routes hostnames, and entry ports for games without a hostname, to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes and port routes, so one entry node serves them all. Install options set the panel host, hostnames, node network and entry ports (see its README). | `on_timer` (60 s), `on_webhook` (optional hint), `log`, `http` (panel host option), secret `PELICAN_TOKEN`, `routes`, `port_routes` (needs a wayhouse 0.3.0 host) |
 
 ## Building
 
@@ -62,7 +62,7 @@ Then give an ACME site `"dns_plugin": "<id>"`. The plugin finds the zone by tryi
 
 ## Layout
 
-One crate per plugin under `plugins/<name>/`, built as `cdylib`, depending on `wayhouse-plugin-abi` (pinned by git revision in the workspace `Cargo.toml`). The capability declaration is a `caps.json` next to the crate, embedded as the `wayhouse.plugin-caps` section.
+One crate per plugin under `plugins/<name>/`, built as `cdylib`, depending on `wayhouse-plugin-abi` (pinned by git revision in the workspace `Cargo.toml`). The capability declaration is a `caps.json` next to the crate, embedded as the `wayhouse.plugin-caps` section. A plugin with operator-supplied values (Pelican) adds a `manifest.json` (options and capability bindings, section `wayhouse.plugin-manifest`) and a `check-config.json` that CI checks it with.
 
 ## Code of conduct
 

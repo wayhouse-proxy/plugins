@@ -1,0 +1,1 @@
+{"panel_host":"panel.example.org","route_host":"*.mc.example.org","host_template":"{id}.mc.example.org"}

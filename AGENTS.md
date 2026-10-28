@@ -14,6 +14,8 @@ rust-toolchain.toml       pinned toolchain
 plugins/<name>/           one cdylib crate per plugin
   Cargo.toml
   caps.json               capability declaration, embedded as the wayhouse.plugin-caps section
+  manifest.json           optional (ABI 0.2): install options and the "${opt:NAME}" bindings, embedded as wayhouse.plugin-manifest
+  check-config.json       optional: sample install config CI passes to wayhouse-plugin-check
   src/lib.rs
 .github/workflows/ci.yml  fmt, clippy, tests, wasm build, conformance check, ci-ok gate
 ```
