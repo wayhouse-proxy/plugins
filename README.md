@@ -67,3 +67,7 @@ One crate per plugin under `plugins/<name>/`, built as `cdylib`, depending on `w
 ## Code of conduct
 
 Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md). Report problems privately through a GitHub security advisory on this repository.
+
+## Registry and releases
+
+`index.json` is the plugin registry wayhouse reads (`kind: "plugin"`). The **Release** workflow (run from the Actions tab on `main`) publishes a `<name>-v<version>` GitHub release for every plugin that has none yet, signs the module with minisign when the `MINISIGN_SECRET_KEY` and `MINISIGN_PASSWORD` secrets exist (the same key as the sniffers repository), and refreshes `index.json` with `scripts/registry.py`. Published versions are immutable: bump the version in the plugin's `Cargo.toml` to ship a change. `selftest` is never published.

@@ -1,0 +1,135 @@
+name: Release
+
+# Publishes plugins whose `<name>-v<version>` release does not exist yet, then refreshes
+# index.json on main. Run it from the Actions tab on main (input: one plugin, or "all").
+# Published versions are immutable: an existing release is never touched, and the index
+# generator refuses a changed sha256 for a version it already lists. To ship a change,
+# bump the version in the plugin's Cargo.toml, merge, run this. `selftest` is never published.
+#
+# Signing: set the repository secrets MINISIGN_SECRET_KEY (the secret key file's contents)
+# and MINISIGN_PASSWORD. This is the same key the sniffers repository signs with. Without
+# them modules are published unsigned and the job summary says so; wayhouse treats an
+# unsigned module as needing an explicit confirm.
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: 'Plugin name, or "all" for every plugin without a release'
+        required: true
+        default: all
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # create releases and push index.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Pick the plugins
+        id: pick
+        env:
+          INPUT: ${{ inputs.plugin }}
+        run: |
+          set -euo pipefail
+          if [ "$INPUT" = all ]; then
+            names=$(ls plugins | grep -vx selftest)
+          else
+            [[ "$INPUT" =~ ^[A-Za-z0-9_-]+$ ]] && [ "$INPUT" != selftest ] && [ -d "plugins/$INPUT" ] || { echo "no such publishable plugin: $INPUT" >&2; exit 1; }
+            names=$INPUT
+          fi
+          echo "names=$(echo $names)" >> "$GITHUB_OUTPUT"
+      - name: Build and stage
+        run: |
+          set -euo pipefail
+          python3 scripts/registry_test.py
+          cargo build --locked --release --target wasm32-unknown-unknown --workspace
+          python3 scripts/registry.py stage --out dist-new ${{ steps.pick.outputs.names }}
+      - name: Install minisign (only when a signing key is configured)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [ -n "$MINISIGN_SECRET_KEY" ]; then
+            sudo apt-get update && sudo apt-get install -y minisign
+          fi
+      - name: Create releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          key=
+          if [ -n "$MINISIGN_SECRET_KEY" ]; then
+            key=$(mktemp); chmod 600 "$key"
+            printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+            trap 'rm -f "$key"' EXIT
+          fi
+          for name in ${{ steps.pick.outputs.names }}; do
+            version=$(python3 -c 'import sys,tomllib; print(tomllib.load(open(sys.argv[1],"rb"))["package"]["version"])' "plugins/$name/Cargo.toml")
+            tag="$name-v$version"
+            mkdir -p "dist/$name"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              # Already published: take the published bytes, never a rebuild.
+              echo "::notice::$tag exists, keeping the published module"
+              gh release download "$tag" --dir "dist/$name" --pattern "$name.wasm*" --clobber
+              continue
+            fi
+            cp "dist-new/$name/"* "dist/$name/"
+            assets=("dist/$name/$name.wasm")
+            if [ -n "$key" ]; then
+              printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" -m "dist/$name/$name.wasm" -x "dist/$name/$name.wasm.minisig"
+              assets+=("dist/$name/$name.wasm.minisig")
+              echo "- $tag: signed" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- $tag: **unsigned** (no MINISIGN_SECRET_KEY secret)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            gh release create "$tag" "${assets[@]}" --target "$GITHUB_SHA" --title "$name $version" \
+              --notes "Plugin \`$name\` $version. sha256 \`$(sha256sum "dist/$name/$name.wasm" | cut -d' ' -f1)\`."
+          done
+      - name: Refresh index.json
+        run: |
+          set -euo pipefail
+          python3 scripts/registry.py generate --name "wayhouse official plugins" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download" \
+            --out index.json dist/*
+          python3 scripts/registry.py verify index.json
+      - name: Commit index.json
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- index.json && [ -n "$(git ls-files index.json)" ]; then
+            echo "index.json unchanged"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          git commit -m "chore: update index.json"
+          git push origin HEAD:main || {
+            echo "::error::could not push index.json to main (branch rules?). It is attached to this run as an artifact: commit it by hand."
+            exit 1
+          }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: index
+          path: index.json
+          if-no-files-found: ignore
