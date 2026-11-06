@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "kind": "plugin",
+  "name": "wayhouse official plugins",
+  "plugins": [
+    {
+      "name": "acme-dns-cloudflare",
+      "description": "wayhouse plugin that answers ACME DNS-01 challenges by setting and removing TXT records in Cloudflare DNS.",
+      "license": "MIT OR Apache-2.0",
+      "homepage": "https://github.com/wayhouse-proxy/plugins/tree/main/plugins/acme-dns-cloudflare",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "abi": "0.2",
+          "url": "https://github.com/wayhouse-proxy/plugins/releases/download/acme-dns-cloudflare-v0.1.0/acme-dns-cloudflare.wasm",
+          "sha256": "424ace0ae8925d253c8685e9cfa51ec653ddf1683ab8487d9c14dc86ed32a2bc",
+          "size": 141977,
+          "signature_url": "https://github.com/wayhouse-proxy/plugins/releases/download/acme-dns-cloudflare-v0.1.0/acme-dns-cloudflare.wasm.minisig"
+        }
+      ]
+    },
+    {
+      "name": "pelican",
+      "description": "wayhouse plugin that routes hostnames to the Pelican panel's game servers: one entry node, no per-host DNS or firewall edits.",
+      "license": "MIT OR Apache-2.0",
+      "homepage": "https://github.com/wayhouse-proxy/plugins/tree/main/plugins/pelican",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "abi": "0.2",
+          "url": "https://github.com/wayhouse-proxy/plugins/releases/download/pelican-v0.1.0/pelican.wasm",
+          "sha256": "efb86d2bd5fd9699e0a58e51233b1d581f7b6edbcad8ac3c481aaffe4fbbd183",
+          "size": 242132,
+          "signature_url": "https://github.com/wayhouse-proxy/plugins/releases/download/pelican-v0.1.0/pelican.wasm.minisig",
+          "options_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "panel_host",
+              "route_host",
+              "host_template"
+            ],
+            "properties": {
+              "panel_host": {
+                "type": "string",
+                "title": "Panel host",
+                "description": "Hostname of the Pelican panel, without scheme or path. The plugin may call this host (HTTPS, port 443) and nothing else.",
+                "order": 1
+              },
+              "host_template": {
+                "type": "string",
+                "title": "Hostname template",
+                "description": "Hostname per server: {identifier}, {id}, {name} or {external_id}, for example {identifier}.mc.example.com. Prefer {identifier} or {id}.",
+                "order": 2
+              },
+              "route_host": {
+                "type": "string",
+                "title": "Claimable hostnames",
+                "description": "The hostnames the plugin may route: an exact name or *.suffix, for example *.mc.example.com.",
+                "order": 3
+              },
+              "node_cidr": {
+                "type": "string",
+                "title": "Node network",
+                "description": "Network the Pelican nodes' addresses are in; routes pointing elsewhere are not allowed.",
+                "default": "10.0.0.0/8",
+                "order": 4
+              },
+              "entry_ports": {
+                "type": "string",
+                "title": "Entry ports",
+                "description": "Entry port range wayhouse may assign to games without a hostname, lo-hi.",
+                "default": "30000-30999",
+                "order": 5
+              },
+              "node_addresses": {
+                "type": "object",
+                "title": "Node addresses",
+                "description": "Node id to the address the entry node reaches it at; wins over the allocation's ip.",
+                "group": "Advanced",
+                "order": 6
+              },
+              "backend_ports": {
+                "type": "string",
+                "title": "Backend ports",
+                "description": "Ports a route may point at, lo-hi or one port. Set it: the node network limits addresses, not ports.",
+                "group": "Advanced",
+                "order": 7
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
