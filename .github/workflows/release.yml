@@ -35,7 +35,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
-      contents: write   # create releases and push index.json
+      contents: write   # create releases and push the index.json branch
+      pull-requests: write   # open the index.json pull request and queue it
+      actions: write   # dispatch CI on that branch (the workflow token does not trigger it)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -113,20 +115,32 @@ jobs:
             --base-url "https://github.com/${{ github.repository }}/releases/download" \
             --out index.json dist/*
           python3 scripts/registry.py verify index.json
-      - name: Commit index.json
+      - name: Open a pull request for index.json and queue it
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if git diff --quiet -- index.json && [ -n "$(git ls-files index.json)" ]; then
             echo "index.json unchanged"; exit 0
           fi
+          # main only takes pull requests through the merge queue, so the update goes in as one.
+          branch="release-index/run-${{ github.run_id }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
           git add index.json
           git commit -m "chore: update index.json"
-          git push origin HEAD:main || {
-            echo "::error::could not push index.json to main (branch rules?). It is attached to this run as an artifact: commit it by hand."
-            exit 1
-          }
+          git push origin "$branch"
+          hint="index.json is attached to this run as an artifact: open the pull request by hand. Automatic PRs need Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests'."
+          gh pr create --base main --head "$branch" --title "chore: update index.json" \
+            --body "Index refresh from release run ${{ github.run_id }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}." \
+            || { echo "::error::could not open the index.json pull request. $hint"; exit 1; }
+          # A pull request opened with the workflow token does not start CI, so ci-ok would never
+          # report. Dispatch CI on the branch instead: its ci-ok check run attaches to the head commit.
+          gh workflow run ci.yml --ref "$branch" \
+            || { echo "::error::could not start CI on $branch; the pull request is open but will not merge by itself."; exit 1; }
+          gh pr merge "$branch" --auto --squash \
+            || { echo "::error::could not queue the pull request; queue it by hand."; exit 1; }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
