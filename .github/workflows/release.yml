@@ -10,6 +10,8 @@ name: Release
 # and MINISIGN_PASSWORD. This is the same key the sniffers repository signs with. Without
 # them modules are published unsigned and the job summary says so; wayhouse treats an
 # unsigned module as needing an explicit confirm.
+# The signature's trusted comment is `wayhouse-v1 plugin <name> <version> <abi> <sha256>`
+# (`scripts/registry.py claim`); wayhouse refuses a signature without it.
 
 on:
   workflow_dispatch:
@@ -99,7 +101,10 @@ jobs:
             cp "dist-new/$name/"* "dist/$name/"
             assets=("dist/$name/$name.wasm")
             if [ -n "$key" ]; then
-              printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" -m "dist/$name/$name.wasm" -x "dist/$name/$name.wasm.minisig"
+              # The trusted comment names the artifact (name, version, ABI, sha256), so a
+              # signature cannot be replayed under another name or version (#594).
+              claim=$(python3 scripts/registry.py claim "$name" "$version" "dist/$name/$name.wasm")
+              printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" -t "$claim" -m "dist/$name/$name.wasm" -x "dist/$name/$name.wasm.minisig"
               assets+=("dist/$name/$name.wasm.minisig")
               echo "- $tag: signed" >> "$GITHUB_STEP_SUMMARY"
             else
