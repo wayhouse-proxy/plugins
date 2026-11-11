@@ -22,6 +22,17 @@ class T(unittest.TestCase):
         with self.assertRaises(ValueError):
             registry.wasm_abi(b"nope")
 
+    def test_claim_names_the_signed_artifact(self):
+        with tempfile.TemporaryDirectory() as t:
+            wasm = pathlib.Path(t) / "demo.wasm"
+            wasm.write_bytes(WASM)
+            r = subprocess.run(
+                [sys.executable, str(HERE / "registry.py"), "claim", "demo", "0.1.0", str(wasm)],
+                capture_output=True, text=True, check=True,
+            )
+        want = f"wayhouse-v1 plugin demo 0.1.0 0.2 {hashlib.sha256(WASM).hexdigest()}"
+        self.assertEqual(r.stdout.strip(), want)
+
     def test_prereleases_sort_below_the_release(self):
         self.assertLess(registry.semver_key("0.3.0-beta.1"), registry.semver_key("0.3.0"))
         self.assertLess(registry.semver_key("0.2.9"), registry.semver_key("0.3.0-beta.1"))

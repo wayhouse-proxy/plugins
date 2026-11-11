@@ -200,6 +200,13 @@ def verify(args):
     return verify_doc(json.loads(args.file.read_text()))
 
 
+def claim(args):
+    """Print the minisign trusted comment wayhouse requires: it names the signed artifact."""
+    data = args.wasm.read_bytes()
+    print(f"wayhouse-v1 plugin {args.name} {args.version} {wasm_abi(data)} {hashlib.sha256(data).hexdigest()}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=pathlib.Path, default=pathlib.Path("."))
@@ -214,6 +221,11 @@ def main():
     g.add_argument("--out", type=pathlib.Path, required=True)
     g.add_argument("dirs", nargs="+")
     g.set_defaults(fn=generate)
+    c = sub.add_parser("claim")
+    c.add_argument("name")
+    c.add_argument("version")
+    c.add_argument("wasm", type=pathlib.Path)
+    c.set_defaults(fn=claim)
     v = sub.add_parser("verify")
     v.add_argument("file", type=pathlib.Path)
     v.set_defaults(fn=verify)
