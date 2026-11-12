@@ -30,10 +30,10 @@ MAX_CATEGORIES, MAX_TAGS = 3, 8
 
 
 def allowed_categories(root):
-    """The fixed list in categories.toml; None when the repo has none (syntax checks only)."""
+    """The fixed list in categories.toml; a missing file is an error (it must not fail open)."""
     f = root / "categories.toml"
     if not f.is_file():
-        return None
+        raise SystemExit(f"{f} not found: the allowed category list is required")
     cats = tomllib.loads(f.read_text())["categories"]
     bad = [c for c in cats if not LABEL.match(c)]
     if bad or len(set(cats)) != len(cats):

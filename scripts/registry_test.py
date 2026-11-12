@@ -68,7 +68,8 @@ class T(unittest.TestCase):
             self.assertEqual(doc["schema"], 2)
             self.assertEqual((e["categories"], e["tags"]), (["other"], ["demo", "x-y"]))
             self.assertEqual((e["latest"], e["abi"], e["signed"], e["updated"]), ("0.1.0", "0.2", False, "2026-11-12"))
-            self.assertEqual(subprocess.run(cmd).returncode, 0)
+            later = cmd[:cmd.index("--date") + 1] + ["2026-12-01"] + cmd[cmd.index("--date") + 2:]
+            self.assertEqual(subprocess.run(later).returncode, 0)
             self.assertEqual(out.read_text(), first)
             (d / "demo.wasm").write_bytes(WASM[:-2] + b"\3\0")
             r = subprocess.run(cmd, capture_output=True, text=True)
@@ -77,7 +78,15 @@ class T(unittest.TestCase):
             self.assertEqual(out.read_text(), first)
 
     def test_a_category_off_the_list_and_a_bad_tag_are_refused(self):
-        root = pathlib.Path("/nonexistent")
+        with tempfile.TemporaryDirectory() as t:
+            root = pathlib.Path(t)
+            (root / "plugins/p").mkdir(parents=True)
+            (root / "plugins/p/catalog.toml").write_text('categories = ["nope"]\n')
+            with self.assertRaises(SystemExit) as cm:
+                registry.labels(root, "p", ["other"])
+            self.assertIn("unknown category 'nope'", str(cm.exception))
+            with self.assertRaises(SystemExit):
+                registry.allowed_categories(root)
         self.assertEqual(registry.label_errors("p", ["a1"], ["ok", "Bad Tag"]), ["p: 'Bad Tag' is not 2 to 24 of a-z, 0-9, '-'"])
         self.assertTrue(registry.label_errors("p", ["aa", "bb", "cc", "dd"], []))
         self.assertTrue(registry.label_errors("p", [], [f"t{i}" for i in range(9)]))
