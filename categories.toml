@@ -1,0 +1,3 @@
+# The categories a plugin may use (1 to 3 per manifest.json). generate refuses any other value.
+# Adding one is a maintainer change: keep the list short so the filters stay useful.
+categories = ["integration", "certificates", "routing", "monitoring", "other"]

@@ -1,0 +1,3 @@
+# What the registry lists for this plugin. Not embedded in the module.
+categories = ["certificates"]
+tags = ["acme", "dns-01", "cloudflare"]
