@@ -1,4 +1,6 @@
 //! Standard base64 decoding (the host returns response bodies base64-encoded).
+//! Hand-rolled on purpose: the plugin is one small WASM module and only ever decodes, so a
+//! dependency such as the `base64` crate is not worth its size.
 
 /// Decodes padded or unpadded standard base64; `None` on any other byte.
 pub fn decode(s: &str) -> Option<Vec<u8>> {
