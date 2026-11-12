@@ -50,6 +50,8 @@ The module declares install options (ABI 0.2), so one prebuilt module fits any d
 4. **API key.** In the panel create an Application API key with **Read** on *Servers* and *Allocations* (see above).
 5. **Install the plugin** with the config above and set the secret: `PUT /plugins/{id}/secrets/PELICAN_TOKEN`. Approve the effective capabilities the upload shows for your config. Updating an install from a build without `on_webhook` to one with it needs that new trigger approved again.
 6. **`host_template`.** Prefer `{identifier}` or `{id}`: they are always set and never change. `{name}` and `{external_id}` change when someone renames a server, and a server without a value for a used placeholder gets no route.
+   Anyone who can edit a server's name or external id on the panel can claim an unused hostname that way, and on a clash the lowest server id wins, so only use `{name}`/`{external_id}` if you trust everyone with that edit right.
+   A failed re-`init` (for example a config that does not parse) is logged and the previous config stays in effect; this is intended.
 7. **Limits of one poll.** At most 8 pages of 100 servers (800) are read, and a response is capped at 1 MiB. A panel with more than that, or a response over the cap, publishes nothing and keeps the previous routes (the plugin logs why), so a very large panel needs a plugin change before it can use this. The whole reconcile, up to 8 panel requests, must also fit the host's time limit for one plugin call, on the webhook path as on the timer; a slow panel can make a call fail (webhook: `502`).
 
 ### Optional: webhooks for instant updates
