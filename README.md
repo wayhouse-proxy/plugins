@@ -62,7 +62,7 @@ Then give an ACME site `"dns_plugin": "<id>"`. The plugin finds the zone by tryi
 
 ## Layout
 
-One crate per plugin under `plugins/<name>/`, built as `cdylib`, depending on `wayhouse-plugin-abi` (pinned by git revision in the workspace `Cargo.toml`). The capability declaration is a `caps.json` next to the crate, embedded as the `wayhouse.plugin-caps` section. A plugin with operator-supplied values (Pelican) adds a `manifest.json` (options and capability bindings, section `wayhouse.plugin-manifest`) and a `check-config.json` that CI checks it with.
+One crate per plugin under `plugins/<name>/`, built as `cdylib`, depending on `wayhouse-plugin-abi` (pinned by git revision in the workspace `Cargo.toml`). The capability declaration is a `caps.json` next to the crate, embedded as the `wayhouse.plugin-caps` section. A plugin with operator-supplied values (Pelican) adds a `manifest.json` (options and capability bindings, section `wayhouse.plugin-manifest`) and a `check-config.json` that CI checks it with. Every plugin also has a `catalog.toml` (`categories` from [`categories.toml`](categories.toml), optional `tags`) that the registry lists; it is not embedded, so it never changes the module.
 
 ## Code of conduct
 

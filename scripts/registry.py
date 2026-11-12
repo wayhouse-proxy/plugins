@@ -2,7 +2,7 @@
 """Stage built plugins and generate the registry index.json (kind "plugin").
 
     registry.py stage [--out dist-new] [names...]   check and copy built modules
-    registry.py generate --base-url URL --out index.json DIR...   build the index from staged dirs
+    registry.py generate --base-url URL --out index.json [--date YYYY-MM-DD] DIR...   build the index from staged dirs
     registry.py verify index.json                    re-check an index file
 
 `stage` needs `cargo build --release --target wasm32-unknown-unknown --workspace` first.
@@ -12,6 +12,7 @@ version that the existing --out file already lists (published versions are immut
 Stdlib only, so the release job needs nothing built.
 """
 import argparse
+import datetime
 import hashlib
 import json
 import pathlib
@@ -23,6 +24,51 @@ UNPUBLISHED = {"selftest"}  # test fixtures, never published
 MAX_MODULE = 8 * 1024 * 1024
 MAX_SCHEMA = 64 * 1024
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+LABEL = re.compile(r"^[a-z0-9-]{2,24}$")
+DATE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+MAX_CATEGORIES, MAX_TAGS = 3, 8
+
+
+def allowed_categories(root):
+    """The fixed list in categories.toml; None when the repo has none (syntax checks only)."""
+    f = root / "categories.toml"
+    if not f.is_file():
+        return None
+    cats = tomllib.loads(f.read_text())["categories"]
+    bad = [c for c in cats if not LABEL.match(c)]
+    if bad or len(set(cats)) != len(cats):
+        raise SystemExit(f"categories.toml: invalid or repeated {bad or cats}")
+    return cats
+
+
+def labels(root, name, allowed):
+    """(categories, tags) from the plugin's catalog.toml (not manifest.json: that one is embedded in the
+    module, so editing it would change published bytes). Tags are trimmed, lowercased and de-duplicated."""
+    cf = root / "plugins" / name / "catalog.toml"
+    m = tomllib.loads(cf.read_text()) if cf.is_file() else {}
+    cats = m.get("categories", [])
+    tags = list(dict.fromkeys(str(x).strip().lower() for x in m.get("tags", [])))
+    errs = label_errors(name, cats, tags)
+    if allowed is not None:
+        errs += [f"{name}: unknown category {c!r} (allowed: {', '.join(allowed)})" for c in cats if c not in allowed]
+    if not cats:
+        errs.append(f"{name}: catalog.toml needs `categories` (1 to {MAX_CATEGORIES})")
+    if errs:
+        raise SystemExit("\n".join(errs))
+    return cats, tags
+
+
+def label_errors(name, cats, tags):
+    errs = []
+    if len(cats) > MAX_CATEGORIES:
+        errs.append(f"{name}: more than {MAX_CATEGORIES} categories")
+    if len(tags) > MAX_TAGS:
+        errs.append(f"{name}: more than {MAX_TAGS} tags")
+    for lst in (cats, tags):
+        errs += [f"{name}: {x!r} is not 2 to 24 of a-z, 0-9, '-'" for x in lst if not LABEL.match(x)]
+        if len(set(lst)) != len(lst):
+            errs.append(f"{name}: repeated label in {lst}")
+    return errs
 
 
 def leb(b, i):
@@ -110,12 +156,16 @@ def semver_key(v):
 
 def generate(args):
     root = args.root.resolve()
+    allowed = allowed_categories(root)
     old = {}
+    old_updated = {}
     if args.out.is_file():
         for p in json.loads(args.out.read_text()).get("plugins", []):
+            old_updated[p["name"]] = p.get("updated")
             for v in p["versions"]:
                 old[(p["name"], v["version"])] = v
     plugins = {}
+    added = set()
     for d in args.dirs:
         d = pathlib.Path(d)
         name = d.name
@@ -152,6 +202,8 @@ def generate(args):
                 "versions": {},
             },
         )
+        if version not in entry["versions"] and (name, version) not in old:
+            added.add(name)
         entry["versions"][version] = v
     # Keep versions of plugins/versions not rebuilt this run.
     for p in (json.loads(args.out.read_text()).get("plugins", []) if args.out.is_file() else []):
@@ -162,21 +214,35 @@ def generate(args):
     for n in sorted(plugins):
         e = plugins[n]
         e["versions"] = sorted(e["versions"].values(), key=lambda v: semver_key(v["version"]), reverse=True)
-        out.append(e)
-    doc = {"schema": 1, "kind": "plugin", "name": args.name, "plugins": out}
+        top = e["versions"][0]
+        e["categories"], e["tags"] = labels(root, n, allowed)
+        e["latest"], e["abi"], e["signed"] = top["version"], top["abi"], "signature_url" in top
+        # The date moves only when a version is added (a backfill of an old version is still an add).
+        e["updated"] = args.date if n in added or not old_updated.get(n) else old_updated[n]
+        out.append({k: e[k] for k in ("name", "description", "license", "homepage", "categories", "tags", "latest", "abi", "signed", "updated", "versions") if k in e})
+    doc = {"schema": 2, "kind": "plugin", "name": args.name, "plugins": out}
     args.out.write_text(json.dumps(doc, indent=2) + "\n")
     return verify_doc(doc)
 
 
 def verify_doc(doc):
     errs = []
-    if doc.get("schema") != 1 or doc.get("kind") != "plugin":
-        errs.append("schema must be 1 and kind plugin")
+    if doc.get("schema") != 2 or doc.get("kind") != "plugin":
+        errs.append("schema must be 2 and kind plugin")
     seen = set()
     for p in doc.get("plugins", []):
         if not NAME.match(p["name"]) or p["name"] in seen:
             errs.append(f"bad or duplicate name {p['name']!r}")
         seen.add(p["name"])
+        errs += label_errors(p["name"], p.get("categories", []), p.get("tags", []))
+        if not DATE.match(p.get("updated", "")):
+            errs.append(f"{p['name']}: updated must be YYYY-MM-DD")
+        if not p.get("homepage", "https://").startswith("https://"):
+            errs.append(f"{p['name']}: homepage must be https")
+        if p["versions"]:
+            top = p["versions"][0]
+            if (p.get("latest"), p.get("abi"), p.get("signed")) != (top["version"], top["abi"], "signature_url" in top):
+                errs.append(f"{p['name']}: latest, abi and signed must describe the newest version")
         keys = [semver_key(v["version"]) for v in p["versions"]]
         if keys != sorted(keys, reverse=True) or len(set(keys)) != len(keys):
             errs.append(f"{p['name']}: versions must be unique and newest first")
@@ -219,6 +285,8 @@ def main():
     g.add_argument("--name", default="wayhouse official plugins")
     g.add_argument("--base-url", required=True)
     g.add_argument("--out", type=pathlib.Path, required=True)
+    g.add_argument("--date", default=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
+                   help="updated date (YYYY-MM-DD) for plugins that gain a version; default today, UTC")
     g.add_argument("dirs", nargs="+")
     g.set_defaults(fn=generate)
     c = sub.add_parser("claim")

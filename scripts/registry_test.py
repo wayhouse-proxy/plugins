@@ -47,12 +47,14 @@ class T(unittest.TestCase):
                 '[package]\nname = "demo"\nversion = "0.1.0"\ndescription = "d"\nlicense.workspace = true\n'
             )
             (root / "plugins/demo/manifest.json").write_text('{"options":{"type":"object"}}')
+            (root / "plugins/demo/catalog.toml").write_text('categories = ["other"]\ntags = [" Demo ", "demo", "x-y"]\n')
+            (root / "categories.toml").write_text('categories = ["other", "routing"]\n')
             d = t / "dist/demo"
             d.mkdir(parents=True)
             (d / "demo.wasm").write_bytes(WASM)
             out = t / "index.json"
             cmd = [sys.executable, str(HERE / "registry.py"), "--root", str(root), "generate",
-                   "--base-url", "https://x.test/dl", "--out", str(out), str(d)]
+                   "--base-url", "https://x.test/dl", "--date", "2026-11-12", "--out", str(out), str(d)]
             self.assertEqual(subprocess.run(cmd).returncode, 0)
             first = out.read_text()
             doc = json.loads(first)
@@ -62,6 +64,10 @@ class T(unittest.TestCase):
             self.assertEqual(v["options_schema"], {"type": "object"})
             self.assertEqual(v["url"], "https://x.test/dl/demo-v0.1.0/demo.wasm")
             self.assertNotIn("signature_url", v)
+            e = doc["plugins"][0]
+            self.assertEqual(doc["schema"], 2)
+            self.assertEqual((e["categories"], e["tags"]), (["other"], ["demo", "x-y"]))
+            self.assertEqual((e["latest"], e["abi"], e["signed"], e["updated"]), ("0.1.0", "0.2", False, "2026-11-12"))
             self.assertEqual(subprocess.run(cmd).returncode, 0)
             self.assertEqual(out.read_text(), first)
             (d / "demo.wasm").write_bytes(WASM[:-2] + b"\3\0")
@@ -69,6 +75,23 @@ class T(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("different hash", r.stderr)
             self.assertEqual(out.read_text(), first)
+
+    def test_a_category_off_the_list_and_a_bad_tag_are_refused(self):
+        root = pathlib.Path("/nonexistent")
+        self.assertEqual(registry.label_errors("p", ["a1"], ["ok", "Bad Tag"]), ["p: 'Bad Tag' is not 2 to 24 of a-z, 0-9, '-'"])
+        self.assertTrue(registry.label_errors("p", ["aa", "bb", "cc", "dd"], []))
+        self.assertTrue(registry.label_errors("p", [], [f"t{i}" for i in range(9)]))
+
+    def test_verify_rejects_schema_1_and_a_catalog_that_disagrees_with_its_versions(self):
+        v = {"version": "0.1.0", "abi": "0.2", "url": "https://x.test/a", "sha256": "a" * 64, "size": 1}
+        e = {"name": "d", "categories": ["other"], "tags": [], "latest": "0.1.0", "abi": "0.2", "signed": False,
+             "updated": "2026-11-12", "versions": [v]}
+        doc = {"schema": 2, "kind": "plugin", "name": "n", "plugins": [e]}
+        self.assertEqual(registry.verify_doc(doc), 0)
+        self.assertEqual(registry.verify_doc({**doc, "schema": 1}), 1)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "signed": True}]}), 1)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "updated": "soon"}]}), 1)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "homepage": "http://x.test"}]}), 1)
 
 
 if __name__ == "__main__":
