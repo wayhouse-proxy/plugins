@@ -30,6 +30,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Keep in step with WAYHOUSE_REV in ci.yml (wayhouse-plugin-abi's rev in Cargo.toml).
+  WAYHOUSE_REV: 10201de6bdf0ae7a8ada5a1ca9e7a416fbc9766f
 
 permissions:
   contents: read
@@ -43,10 +45,24 @@ jobs:
       contents: write   # create releases and push the index.json branch
       pull-requests: write   # open the index.json pull request and queue it
       actions: write   # dispatch CI on that branch (the workflow token does not trigger it)
+      checks: read   # read ci-ok on the dispatched commit
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      - name: Require green CI on this commit
+        # Releases are immutable, so what is published must have passed the full CI (tests,
+        # conformance check of every module, index check) on exactly this commit.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state=$(gh api "repos/${{ github.repository }}/commits/$GITHUB_SHA/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.name == "ci-ok")] | sort_by(.started_at) | last | .conclusion // "none"')
+          if [ "$state" != success ]; then
+            echo "::error::ci-ok is '$state' on $GITHUB_SHA; wait for CI to pass on this commit before releasing"
+            exit 1
+          fi
       - name: Require the signing key
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -90,6 +106,18 @@ jobs:
             --out "$RUNNER_TEMP/index.json" dist-new/*
           python3 scripts/registry.py verify "$RUNNER_TEMP/index.json"
           wayhouse-registry-gen verify-plugin "$RUNNER_TEMP/index.json"
+      - name: Conformance check every staged module
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          cargo install --locked --git https://github.com/wayhouse-proxy/wayhouse --rev "$WAYHOUSE_REV" wayhouse-plugin-host --bin wayhouse-plugin-check
+          for f in dist-new/*/*.wasm; do
+            name=$(basename "$f" .wasm)
+            echo "== $f"
+            # A plugin with required options ships a sample config to check against.
+            cfg=$(ls "plugins/${name//_/-}/check-config.json" 2>/dev/null || true)
+            wayhouse-plugin-check "$f" $cfg
+          done
       - name: Install minisign (only when a signing key is configured)
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
