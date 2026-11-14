@@ -37,6 +37,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: ./.github/actions/registry-gen
       - run: cargo install --locked --git https://github.com/wayhouse-proxy/wayhouse --rev "$WAYHOUSE_REV" wayhouse-plugin-host --bin wayhouse-plugin-check
       - run: python3 scripts/registry_test.py
       - run: cargo fmt --all -- --check
@@ -52,6 +53,16 @@ jobs:
           python3 scripts/registry.py generate --name "ci check" --base-url https://example.invalid/dl \
             --out "$RUNNER_TEMP/index.json" "$RUNNER_TEMP"/dist/*
           python3 scripts/registry.py verify "$RUNNER_TEMP/index.json"
+          # And the client's own validator, which is what refuses an index in the UI.
+          wayhouse-registry-gen verify-plugin "$RUNNER_TEMP/index.json"
+      - name: The committed index.json (when schema 2) still parses
+        run: |
+          if grep -qx '  "schema": 1,' index.json; then
+            echo "::notice::index.json is still schema 1; the next Release regenerates it as schema 2"
+          else
+            python3 scripts/registry.py verify index.json
+            wayhouse-registry-gen verify-plugin index.json
+          fi
       - name: Conformance check every built plugin
         run: |
           set -euo pipefail

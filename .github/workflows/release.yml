@@ -61,6 +61,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: ./.github/actions/registry-gen
       - name: Pick the plugins
         id: pick
         env:
@@ -80,6 +81,15 @@ jobs:
           python3 scripts/registry_test.py
           cargo build --locked --release --target wasm32-unknown-unknown --workspace
           python3 scripts/registry.py stage --out dist-new ${{ steps.pick.outputs.names }}
+      - name: Check the index this release would produce, before any release exists
+        run: |
+          set -euo pipefail
+          cp index.json "$RUNNER_TEMP/index.json"
+          python3 scripts/registry.py generate --name "wayhouse official plugins" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download" \
+            --out "$RUNNER_TEMP/index.json" dist-new/*
+          python3 scripts/registry.py verify "$RUNNER_TEMP/index.json"
+          wayhouse-registry-gen verify-plugin "$RUNNER_TEMP/index.json"
       - name: Install minisign (only when a signing key is configured)
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -133,6 +143,7 @@ jobs:
             --base-url "https://github.com/${{ github.repository }}/releases/download" \
             --out index.json dist/*
           python3 scripts/registry.py verify index.json
+          wayhouse-registry-gen verify-plugin index.json
       - name: Open a pull request for index.json and queue it
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,33 @@
+name: registry-gen
+description: >
+  Build wayhouse-registry-gen from the wayhouse revision in `.github/registry-gen-rev` and put
+  it on PATH, for `verify-plugin` (the client's own plugin-index validator). This is not the
+  revision of `wayhouse-plugin-abi` in Cargo.toml, which pins the plugin ABI and stays put.
+  Built from a checkout with `--path`: `cargo install --git` refuses the wayhouse repository
+  because it holds a nested workspace.
+runs:
+  using: composite
+  steps:
+    - id: rev
+      shell: bash
+      run: |
+        rev=$(tr -d '[:space:]' < .github/registry-gen-rev)
+        [[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo ".github/registry-gen-rev must hold a 40-hex wayhouse revision" >&2; exit 1; }
+        echo "rev=$rev" >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ~/registry-gen
+        key: registry-gen-${{ runner.os }}-${{ steps.rev.outputs.rev }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        REV: ${{ steps.rev.outputs.rev }}
+      run: |
+        set -euo pipefail
+        src=$(mktemp -d)
+        git clone --quiet --filter=blob:none https://github.com/wayhouse-proxy/wayhouse "$src"
+        git -C "$src" checkout --quiet "$REV"
+        (cd "$src" && cargo install --path crates/wayhouse-registry --bin wayhouse-registry-gen --locked --root ~/registry-gen)
+    - shell: bash
+      run: echo "$HOME/registry-gen/bin" >> "$GITHUB_PATH"
