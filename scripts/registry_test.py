@@ -101,6 +101,65 @@ class T(unittest.TestCase):
         self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "signed": True}]}), 1)
         self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "updated": "soon"}]}), 1)
         self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "homepage": "http://x.test"}]}), 1)
+        for bad in ("https://@x.test/a", "https:///a", "https://u:p@x.test/a", "https://", "HTTPS://x.test/", " https://x.test/",
+                    "https://x.test:99999/", "https://x.test:/", "https://a:b:c/", "https://[::1/a", "https://x.test:+80/"):
+            self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "versions": [{**v, "url": bad}]}]}), 1, bad)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "versions": [{**v, "signature_url": "http://x.test/s"}]}]}), 1)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "latest": "1.0", "versions": [{**v, "version": "1.0"}]}]}), 1)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "versions": [{**v, "size": 0}]}]}), 1)
+        for ok in ("https://x.test:8443/a?b#c", "https://[::1]:443/a", "https://x.test"):
+            self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "versions": [{**v, "url": ok}]}]}), 0, ok)
+        for bad in ("1.0.0\n", "01.2.3"):
+            self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "latest": bad, "versions": [{**v, "version": bad}]}]}), 1, bad)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "versions": []}]}), 1)
+        self.assertEqual(registry.verify_doc({**doc, "plugins": [{**e, "abi": "0.02", "versions": [{**v, "abi": "0.02"}]}]}), 1)
+
+    def test_a_removed_plugin_stays_in_the_index_and_generate_still_works(self):
+        with tempfile.TemporaryDirectory() as t:
+            t = pathlib.Path(t)
+            root = t / "repo"
+            (root / "plugins/demo").mkdir(parents=True)
+            (root / "Cargo.toml").write_text('[workspace.package]\nlicense = "MIT"\n')
+            (root / "plugins/demo/Cargo.toml").write_text(
+                '[package]\nname = "demo"\nversion = "0.1.0"\ndescription = "d"\nlicense.workspace = true\n'
+            )
+            (root / "plugins/demo/catalog.toml").write_text('categories = ["other"]\ntags = ["demo"]\n')
+            (root / "categories.toml").write_text('categories = ["other"]\n')
+            d = t / "dist/demo"
+            d.mkdir(parents=True)
+            (d / "demo.wasm").write_bytes(WASM)
+            out = t / "index.json"
+            cmd = [sys.executable, str(HERE / "registry.py"), "--root", str(root), "generate",
+                   "--base-url", "https://x.test/dl", "--date", "2026-11-12", "--out", str(out), str(d)]
+            self.assertEqual(subprocess.run(cmd).returncode, 0)
+            # The plugin directory is removed and nothing is rebuilt this run.
+            import shutil
+            shutil.rmtree(root / "plugins/demo")
+            other = t / "dist/other"
+            other.mkdir()
+            (root / "plugins/other").mkdir(parents=True)
+            (root / "plugins/other/Cargo.toml").write_text(
+                '[package]\nname = "other"\nversion = "0.1.0"\ndescription = "o"\nlicense.workspace = true\n'
+            )
+            (root / "plugins/other/catalog.toml").write_text('categories = ["other"]\n')
+            (other / "other.wasm").write_bytes(WASM)
+            cmd2 = cmd[:-1] + [str(other)]
+            r = subprocess.run(cmd2, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            names = {p["name"]: p for p in json.loads(out.read_text())["plugins"]}
+            self.assertEqual(set(names), {"demo", "other"})
+            self.assertEqual((names["demo"]["categories"], names["demo"]["tags"]), (["other"], ["demo"]))
+            # A plugin whose directory is still there is relabelled from its catalog.toml even when not rebuilt.
+            (root / "plugins/other/catalog.toml").write_text('categories = ["other"]\ntags = ["fresh"]\n')
+            (root / "plugins/demo").mkdir()
+            (root / "plugins/demo/Cargo.toml").write_text(
+                '[package]\nname = "demo"\nversion = "0.1.0"\ndescription = "d"\nlicense.workspace = true\n'
+            )
+            (root / "plugins/demo/catalog.toml").write_text('categories = ["other"]\ntags = ["changed"]\n')
+            r = subprocess.run(cmd2, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            names = {p["name"]: p for p in json.loads(out.read_text())["plugins"]}
+            self.assertEqual(names["demo"]["tags"], ["changed"])
 
 
 if __name__ == "__main__":

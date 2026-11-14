@@ -14,6 +14,7 @@ Stdlib only, so the release job needs nothing built.
 import argparse
 import datetime
 import hashlib
+import ipaddress
 import json
 import pathlib
 import re
@@ -23,10 +24,35 @@ import tomllib
 UNPUBLISHED = {"selftest"}  # test fixtures, never published
 MAX_MODULE = 8 * 1024 * 1024
 MAX_SCHEMA = 64 * 1024
-NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-LABEL = re.compile(r"^[a-z0-9-]{2,24}$")
-DATE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
+LABEL = re.compile(r"[a-z0-9-]{2,24}")
+DATE = re.compile(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])")
+SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?")
 MAX_CATEGORIES, MAX_TAGS = 3, 8
+
+
+def https_url_errors(where, what, url):
+    """Port of the client's check_https_url: https://, a host, no userinfo, at most one colon
+    (IPv6 needs brackets) and a numeric port up to 65535."""
+    ok = url.startswith("https://")
+    if ok:
+        authority = re.split(r"[/?#]", url[len("https://"):], maxsplit=1)[0]
+        if authority.startswith("["):
+            host, close, rest = authority[1:].partition("]")
+            ok = bool(close)
+            port = rest[1:] if rest.startswith(":") else (rest or None)
+            try:
+                ipaddress.IPv6Address(host)
+            except ValueError:
+                ok = False
+        else:
+            host, sep, port = authority.rpartition(":")
+            if not sep:
+                host, port = authority, None
+            ok = authority.count(":") <= 1
+        ok = ok and bool(host) and "@" not in authority
+        ok = ok and (port is None or (port.isascii() and port.isdigit() and int(port) <= 65535))
+    return [] if ok else [f"{where}: {what} must be an https URL with a host, no credentials and a valid port"]
 
 
 def allowed_categories(root):
@@ -35,7 +61,7 @@ def allowed_categories(root):
     if not f.is_file():
         raise SystemExit(f"{f} not found: the allowed category list is required")
     cats = tomllib.loads(f.read_text())["categories"]
-    bad = [c for c in cats if not LABEL.match(c)]
+    bad = [c for c in cats if not LABEL.fullmatch(c)]
     if bad or len(set(cats)) != len(cats):
         raise SystemExit(f"categories.toml: invalid or repeated {bad or cats}")
     return cats
@@ -65,7 +91,7 @@ def label_errors(name, cats, tags):
     if len(tags) > MAX_TAGS:
         errs.append(f"{name}: more than {MAX_TAGS} tags")
     for lst in (cats, tags):
-        errs += [f"{name}: {x!r} is not 2 to 24 of a-z, 0-9, '-'" for x in lst if not LABEL.match(x)]
+        errs += [f"{name}: {x!r} is not 2 to 24 of a-z, 0-9, '-'" for x in lst if not LABEL.fullmatch(x)]
         if len(set(lst)) != len(lst):
             errs.append(f"{name}: repeated label in {lst}")
     return errs
@@ -206,7 +232,11 @@ def generate(args):
             added.add(name)
         entry["versions"][version] = v
     # Keep versions of plugins/versions not rebuilt this run.
+    # A plugin whose directory is gone keeps its categories and tags from the previous index.
+    kept = {}
     for p in (json.loads(args.out.read_text()).get("plugins", []) if args.out.is_file() else []):
+        if p["name"] not in plugins and not (root / "plugins" / p["name"]).is_dir():
+            kept[p["name"]] = (p.get("categories", []), p.get("tags", []))
         e = plugins.setdefault(p["name"], {**p, "versions": {}})
         for v in p["versions"]:
             e["versions"].setdefault(v["version"], v)
@@ -215,7 +245,7 @@ def generate(args):
         e = plugins[n]
         e["versions"] = sorted(e["versions"].values(), key=lambda v: semver_key(v["version"]), reverse=True)
         top = e["versions"][0]
-        e["categories"], e["tags"] = labels(root, n, allowed)
+        e["categories"], e["tags"] = kept[n] if n in kept else labels(root, n, allowed)
         e["latest"], e["abi"], e["signed"] = top["version"], top["abi"], "signature_url" in top
         # The date moves only when a version is added (a backfill of an old version is still an add).
         e["updated"] = args.date if n in added or not old_updated.get(n) else old_updated[n]
@@ -231,15 +261,17 @@ def verify_doc(doc):
         errs.append("schema must be 2 and kind plugin")
     seen = set()
     for p in doc.get("plugins", []):
-        if not NAME.match(p["name"]) or p["name"] in seen:
+        if not NAME.fullmatch(p["name"]) or p["name"] in seen:
             errs.append(f"bad or duplicate name {p['name']!r}")
         seen.add(p["name"])
         errs += label_errors(p["name"], p.get("categories", []), p.get("tags", []))
-        if not DATE.match(p.get("updated", "")):
+        if not DATE.fullmatch(p.get("updated", "")):
             errs.append(f"{p['name']}: updated must be YYYY-MM-DD")
-        if not p.get("homepage", "https://").startswith("https://"):
-            errs.append(f"{p['name']}: homepage must be https")
-        if p["versions"]:
+        if "homepage" in p:
+            errs += https_url_errors(p["name"], "homepage", p["homepage"])
+        if not p["versions"]:
+            errs.append(f"{p['name']}: no versions")
+        else:
             top = p["versions"][0]
             if (p.get("latest"), p.get("abi"), p.get("signed")) != (top["version"], top["abi"], "signature_url" in top):
                 errs.append(f"{p['name']}: latest, abi and signed must describe the newest version")
@@ -248,13 +280,16 @@ def verify_doc(doc):
             errs.append(f"{p['name']}: versions must be unique and newest first")
         for v in p["versions"]:
             where = f"{p['name']} {v['version']}"
-            if not v["url"].startswith("https://"):
-                errs.append(f"{where}: url must be https")
+            if not SEMVER.fullmatch(v["version"]):
+                errs.append(f"{where}: bad version")
+            errs += https_url_errors(where, "url", v["url"])
+            if "signature_url" in v:
+                errs += https_url_errors(where, "signature_url", v["signature_url"])
             if not re.fullmatch(r"[0-9a-f]{64}", v["sha256"]):
                 errs.append(f"{where}: bad sha256")
             if not 0 < v["size"] <= MAX_MODULE:
                 errs.append(f"{where}: bad size")
-            if not re.fullmatch(r"\d+\.\d+", v["abi"]):
+            if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)", v["abi"]):
                 errs.append(f"{where}: bad abi")
     if errs:
         print("\n".join(errs), file=sys.stderr)
