@@ -43,6 +43,15 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo build --release --target wasm32-unknown-unknown --workspace
+      - name: Index generates and verifies
+        # The release job's own steps, run on a scratch index so a plugin the index
+        # builder or verifier would refuse fails here and not after the releases exist.
+        run: |
+          set -euo pipefail
+          python3 scripts/registry.py stage --out "$RUNNER_TEMP/dist"
+          python3 scripts/registry.py generate --name "ci check" --base-url https://example.invalid/dl \
+            --out "$RUNNER_TEMP/index.json" "$RUNNER_TEMP"/dist/*
+          python3 scripts/registry.py verify "$RUNNER_TEMP/index.json"
       - name: Conformance check every built plugin
         run: |
           set -euo pipefail
