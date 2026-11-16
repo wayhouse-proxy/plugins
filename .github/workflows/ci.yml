@@ -16,7 +16,7 @@ env:
   CARGO_INCREMENTAL: "0"
   RUSTFLAGS: "-D warnings"
   # Keep in step with wayhouse-plugin-abi's rev in Cargo.toml.
-  WAYHOUSE_REV: 10201de6bdf0ae7a8ada5a1ca9e7a416fbc9766f
+  WAYHOUSE_REV: 3bf309383de17c5f986a1955e552e3eda5de27f5
 
 permissions:
   contents: read
