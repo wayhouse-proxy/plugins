@@ -77,6 +77,39 @@ class T(unittest.TestCase):
             self.assertIn("different hash", r.stderr)
             self.assertEqual(out.read_text(), first)
 
+    def test_versions_carried_over_from_a_schema_1_index_come_back_unsigned(self):
+        with tempfile.TemporaryDirectory() as t:
+            t = pathlib.Path(t)
+            root = t / "repo"
+            (root / "plugins/demo").mkdir(parents=True)
+            (root / "Cargo.toml").write_text('[workspace.package]\nlicense = "MIT"\n')
+            (root / "plugins/demo/Cargo.toml").write_text(
+                '[package]\nname = "demo"\nversion = "0.2.0"\ndescription = "d"\nlicense.workspace = true\n'
+            )
+            (root / "plugins/demo/catalog.toml").write_text('categories = ["other"]\n')
+            (root / "categories.toml").write_text('categories = ["other"]\n')
+            d = t / "dist/demo"
+            d.mkdir(parents=True)
+            (d / "demo.wasm").write_bytes(WASM)
+            (d / "demo.wasm.minisig").write_text("sig")
+            old = {"schema": 1, "kind": "plugin", "name": "x", "plugins": [{
+                "name": "demo", "description": "d", "license": "MIT", "homepage": "https://x.test",
+                "categories": ["other"], "tags": [], "latest": "0.1.0", "abi": "0.2", "signed": True, "updated": "2026-11-01",
+                "versions": [{"version": "0.1.0", "abi": "0.2", "url": "https://x.test/demo-v0.1.0/demo.wasm",
+                              "sha256": "0" * 64, "size": 1, "signature_url": "https://x.test/demo-v0.1.0/demo.wasm.minisig"}]}]}
+            out = t / "index.json"
+            out.write_text(json.dumps(old))
+            cmd = [sys.executable, str(HERE / "registry.py"), "--root", str(root), "generate",
+                   "--base-url", "https://x.test/dl", "--date", "2026-11-19", "--out", str(out), str(d)]
+            self.assertEqual(subprocess.run(cmd).returncode, 0)
+            vs = {v["version"]: v for v in json.loads(out.read_text())["plugins"][0]["versions"]}
+            self.assertNotIn("signature_url", vs["0.1.0"])
+            self.assertIn("signature_url", vs["0.2.0"])
+            # a schema 2 index keeps what it has
+            self.assertEqual(subprocess.run(cmd).returncode, 0)
+            vs = {v["version"]: v for v in json.loads(out.read_text())["plugins"][0]["versions"]}
+            self.assertIn("signature_url", vs["0.2.0"])
+
     def test_a_category_off_the_list_and_a_bad_tag_are_refused(self):
         with tempfile.TemporaryDirectory() as t:
             root = pathlib.Path(t)
