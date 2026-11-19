@@ -188,7 +188,7 @@ def generate(args):
     prev_doc = json.loads(args.out.read_text()) if args.out.is_file() else {}
     # Signatures in a schema 1 index predate the claim (name, version, ABI, sha256 in the trusted
     # comment) and fail verification in the client: carried-over versions come back unsigned.
-    legacy = bool(prev_doc) and prev_doc.get("schema", 1) < 2
+    legacy = bool(prev_doc) and prev_doc.get("schema") != 2
     if prev_doc:
         for p in prev_doc.get("plugins", []):
             old_updated[p["name"]] = p.get("updated")
