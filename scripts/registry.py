@@ -185,8 +185,12 @@ def generate(args):
     allowed = allowed_categories(root)
     old = {}
     old_updated = {}
-    if args.out.is_file():
-        for p in json.loads(args.out.read_text()).get("plugins", []):
+    prev_doc = json.loads(args.out.read_text()) if args.out.is_file() else {}
+    # Signatures in a schema 1 index predate the claim (name, version, ABI, sha256 in the trusted
+    # comment) and fail verification in the client: carried-over versions come back unsigned.
+    legacy = bool(prev_doc) and prev_doc.get("schema") != 2
+    if prev_doc:
+        for p in prev_doc.get("plugins", []):
             old_updated[p["name"]] = p.get("updated")
             for v in p["versions"]:
                 old[(p["name"], v["version"])] = v
@@ -234,7 +238,9 @@ def generate(args):
     # Keep versions of plugins/versions not rebuilt this run.
     # A plugin whose directory is gone keeps its categories and tags from the previous index.
     kept = {}
-    for p in (json.loads(args.out.read_text()).get("plugins", []) if args.out.is_file() else []):
+    for p in prev_doc.get("plugins", []):
+        if legacy:
+            p = {**p, "versions": [{k: x for k, x in v.items() if k != "signature_url"} for v in p["versions"]]}
         if p["name"] not in plugins and not (root / "plugins" / p["name"]).is_dir():
             kept[p["name"]] = (p.get("categories", []), p.get("tags", []))
         e = plugins.setdefault(p["name"], {**p, "versions": {}})
