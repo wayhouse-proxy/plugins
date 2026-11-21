@@ -71,7 +71,8 @@ jobs:
             echo "== $f"
             name=$(basename "$f" .wasm)
             # A plugin with required options ships a sample config to check against.
-            cfg=$(ls "plugins/${name//_/-}/check-config.json" 2>/dev/null || true)
+            cfg=""
+            [ -f "plugins/${name//_/-}/check-config.json" ] && cfg="plugins/${name//_/-}/check-config.json"
             wayhouse-plugin-check "$f" $cfg
           done
 
