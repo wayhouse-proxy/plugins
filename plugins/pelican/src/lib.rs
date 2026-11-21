@@ -213,6 +213,11 @@ mod tests {
                 "{name} unused"
             );
         }
+        // The six placeholders in `caps.json`: `panel_host` twice (`http.hosts` and the
+        // `PELICAN_TOKEN` secret's hosts), `route_host` once (`routes.hosts`), `node_cidr` twice
+        // (`routes.backends` and `port_routes.backends`) and `entry_ports` once
+        // (`port_routes.ports`). A new placeholder changes this count and needs a binding in
+        // `manifest.json`.
         assert_eq!(CAPS_JSON.matches("${opt:").count(), 6);
         let v: serde_json::Value = serde_json::from_str(&effective).unwrap();
         assert_eq!(v["http"]["hosts"][0]["host"], "panel.example");

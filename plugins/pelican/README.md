@@ -23,7 +23,9 @@ Each tick: `GET /api/application/servers?include=allocations` (up to 8 pages of 
   "route_host": "*.mc.example.com",
   "host_template": "{identifier}.mc.example.com",
   "node_addresses": { "1": "10.0.0.5" },
-  "backend_ports": "25565-25999"
+  "backend_ports": "25565-25999",
+  "node_cidr": "10.0.0.0/8",
+  "entry_ports": "30000-30999"
 }
 ```
 
