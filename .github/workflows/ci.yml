@@ -56,14 +56,10 @@ jobs:
           python3 scripts/registry.py verify "$RUNNER_TEMP/index.json"
           # And the client's own validator, which is what refuses an index in the UI.
           wayhouse-registry-gen verify-plugin "$RUNNER_TEMP/index.json"
-      - name: The committed index.json (when schema 2) still parses
+      - name: The committed index.json still parses
         run: |
-          if grep -qx '  "schema": 1,' index.json; then
-            echo "::notice::index.json is still schema 1; the next Release regenerates it as schema 2"
-          else
-            python3 scripts/registry.py verify index.json
-            wayhouse-registry-gen verify-plugin index.json
-          fi
+          python3 scripts/registry.py verify index.json
+          wayhouse-registry-gen verify-plugin index.json
       - name: Conformance check every built plugin
         run: |
           set -euo pipefail
