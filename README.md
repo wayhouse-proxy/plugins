@@ -1,6 +1,6 @@
 # wayhouse plugins
 
-Plugins for [wayhouse](https://github.com/wayhouse-proxy/wayhouse): WASM modules that react to a trigger (today: a timer) and act only through capabilities an operator approved. Not to be confused with [sniffers](https://github.com/wayhouse-proxy/sniffers), which run on the proxy data path.
+Plugins for [wayhouse](https://github.com/wayhouse-proxy/wayhouse): WASM modules that react to a trigger (a timer, a webhook, a controller event or an ACME DNS challenge) and act only through capabilities an operator approved. Not to be confused with [sniffers](https://github.com/wayhouse-proxy/sniffers), which run on the proxy data path.
 
 Plugins from this repository are third-party code: install and run them at your own risk. The sandbox and the approved capabilities are the hard wall.
 
@@ -10,7 +10,9 @@ Plugins from this repository are third-party code: install and run them at your 
 | ------ | ---------- | ------------ |
 | [`selftest`](plugins/selftest) | Test plugin: counts its ticks in `state` and logs each one. Install it to prove the plugin pipeline works. | `on_timer` (10 s), `log`, `state` (1 KiB) |
 | [`acme-dns-cloudflare`](plugins/acme-dns-cloudflare) | DNS-provider plugin for the controller's ACME runner: sets and removes the `_acme-challenge` TXT record in Cloudflare DNS. | `on_acme_dns` (and an unused `on_timer`, 1 week), `http` (`api.cloudflare.com`), secret `CLOUDFLARE_API_TOKEN` |
-| [`pelican`](plugins/pelican) | Routes hostnames, and entry ports for games without a hostname, to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes and port routes, so one entry node serves them all. Install options set the panel host, hostnames, node network and entry ports (see its README). | `on_timer` (60 s), `on_webhook` (optional hint), `log`, `http` (panel host option), secret `PELICAN_TOKEN`, `routes`, `port_routes` (needs a wayhouse 0.3.0 host) |
+| [`pelican`](plugins/pelican) | Routes hostnames, and entry ports for games without a hostname, to the game servers of a Pelican panel: lists servers every minute and publishes `hostname -> node ip:port` routes and port routes, so one entry node serves them all. Install options set the panel host, hostnames, node network and entry ports (see its README). | `on_timer` (60 s), `on_webhook` (optional hint), `log`, `http` (panel host option), secret `PELICAN_TOKEN`, `routes`, `port_routes` |
+
+These modules are built against plugin ABI 0.3 (the revision pinned in `Cargo.toml`). The host requires an exact `major.minor` match while the major is 0, so an older host refuses them at upload; see "Plugin ABI" in the wayhouse upgrade guide (`docs/migrating-0.3-to-0.4.md`).
 
 ## Building
 
